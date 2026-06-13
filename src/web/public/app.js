@@ -1,18 +1,24 @@
 // =============================================================================
-//  edu-mesh · App del catálogo (vanilla JS, sin dependencias)
+//  edu-mesh · App del catálogo (módulo) — descarga en el NAVEGADOR (mesh WebRTC)
+// -----------------------------------------------------------------------------
+//  El celular descarga por bloques desde compañeros (WebRTC) o del nodo central
+//  (HTTP de respaldo), verifica cada bloque, lo guarda en IndexedDB y se vuelve
+//  seeder. La disponibilidad de cada archivo se mide en ESTE navegador.
 // =============================================================================
 
-const state = { tree: [], node: null, selected: null };
+import { mesh, ensureMesh, downloadFile, localAvailability, announceLocal, assembleBlob } from './download.js';
+
+const state = { tree: [], node: null, selected: null, avail: {} };
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const icon = (id) => `<svg class="ic" aria-hidden="true"><use href="#${id}"/></svg>`;
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 function formatBytes(n) {
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
   return `${(n / 1024 / 1024).toFixed(2)} MB`;
 }
-const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 // ---------- Tema claro/oscuro ----------
 function resolvedDark() {
@@ -31,8 +37,23 @@ function initTheme() {
   });
 }
 
-// ---------- Carga de datos ----------
+// ---------- Indicador de compañeros conectados (mesh) ----------
+let peersEl;
+function initPeersChip() {
+  peersEl = document.createElement('span');
+  peersEl.className = 'node-chip';
+  peersEl.title = 'Compañeros conectados al mesh';
+  peersEl.innerHTML = `${icon('i-wifi')} <span id="peerCount">malla: 0</span>`;
+  $('.appbar-right').prepend(peersEl);
+  mesh.onPeers = (n) => { const c = $('#peerCount'); if (c) c.textContent = `malla: ${n}`; };
+}
+
+// ---------- Carga ----------
+const flatFiles = () => state.tree.flatMap((e) => e.materias).flatMap((m) => m.lecciones).flatMap((l) => l.archivos);
+const findFile = (hash) => flatFiles().find((f) => f.hash === hash);
+
 async function load() {
+  await ensureMesh(); // conecta al broker de señalización
   const [node, catalog] = await Promise.all([
     fetch('/api/node').then((r) => r.json()),
     fetch('/api/catalog').then((r) => r.json()),
@@ -40,6 +61,8 @@ async function load() {
   state.node = node;
   state.tree = catalog.tree;
   renderNode();
+  await refreshAvailability();   // qué tengo ya en ESTE navegador
+  for (const f of flatFiles()) announceLocal(f.hash); // sirvo lo que tenga
   renderTree();
 }
 
@@ -50,11 +73,14 @@ function renderNode() {
   $('#authChip').title = 'Autoridades de confianza: ' + activos.map((a) => a.label).join(', ');
 }
 
+async function refreshAvailability() {
+  for (const f of flatFiles()) state.avail[f.hash] = (await localAvailability(f.hash, f.bloques)).complete;
+}
+
 // ---------- Árbol (sidebar) ----------
 function renderTree() {
   const nav = $('#tree');
   if (!state.tree.length) { nav.innerHTML = '<p class="muted">El catálogo está vacío.</p>'; return; }
-  // Mantener selección si sigue existiendo; si no, la primera materia.
   const exists = state.selected && state.tree.some((e) => e.escuela === state.selected.escuela
     && e.materias.some((m) => m.materia === state.selected.materia));
   if (!exists) state.selected = { escuela: state.tree[0].escuela, materia: state.tree[0].materias[0].materia };
@@ -66,8 +92,7 @@ function renderTree() {
         const on = state.selected.escuela === e.escuela && state.selected.materia === m.materia;
         return `<button class="tree-materia" type="button" aria-current="${on}"
                   data-escuela="${esc(e.escuela)}" data-materia="${esc(m.materia)}">
-                  ${icon('i-book')}<span>${esc(m.materia)}</span>
-                </button>`;
+                  ${icon('i-book')}<span>${esc(m.materia)}</span></button>`;
       }).join('')}
     </div>`).join('');
 
@@ -75,13 +100,12 @@ function renderTree() {
     btn.addEventListener('click', () => {
       state.selected = { escuela: btn.dataset.escuela, materia: btn.dataset.materia };
       renderTree();
-      renderContent();
     });
   });
   renderContent();
 }
 
-// ---------- Contenido (materia seleccionada) ----------
+// ---------- Contenido ----------
 function renderContent() {
   const root = $('#content');
   const escuela = state.tree.find((e) => e.escuela === state.selected.escuela);
@@ -100,15 +124,12 @@ function renderContent() {
         ${l.archivos.map(cardHtml).join('')}
       </div>`).join('')}`;
 
-  root.querySelectorAll('[data-action="download"]').forEach((btn) =>
-    btn.addEventListener('click', () => startDownload(btn.dataset.hash)));
-  root.querySelectorAll('[data-action="open"]').forEach((btn) =>
-    btn.addEventListener('click', () => window.open(`/api/file?hash=${btn.dataset.hash}`, '_blank')));
+  root.querySelectorAll('[data-action="download"]').forEach((b) => b.addEventListener('click', () => startDownload(b.dataset.hash)));
+  root.querySelectorAll('[data-action="open"]').forEach((b) => b.addEventListener('click', () => openFile(b.dataset.hash)));
 }
 
 function badgeHtml(file) {
-  if (file.cached) return `<span class="badge ok">${icon('i-check')} En este dispositivo</span>`;
-  if (file.estado === 'corrupto') return `<span class="badge bad">${icon('i-alert')} Verificación fallida</span>`;
+  if (state.avail[file.hash]) return `<span class="badge ok">${icon('i-check')} En este dispositivo</span>`;
   return `<span class="badge net">${icon('i-wifi')} Disponible en la red</span>`;
 }
 function trustHtml(file) {
@@ -117,8 +138,9 @@ function trustHtml(file) {
     : `<span class="trust ok">${icon('i-shield-check')} Firmado por ${esc(file.autoridad)}</span>`;
 }
 function actionHtml(file) {
-  return file.cached
-    ? `<button class="btn primary" type="button" data-action="open" data-hash="${file.hash}">${icon('i-file')} Abrir PDF</button>`
+  return state.avail[file.hash]
+    ? `<button class="btn primary" type="button" data-action="open" data-hash="${file.hash}">${icon('i-file')} Abrir PDF</button>
+       <span class="seed-chip" title="Compartiendo con tus compañeros">${icon('i-wifi')} Compartiendo</span>`
     : `<button class="btn primary" type="button" data-action="download" data-hash="${file.hash}">${icon('i-download')} Descargar de la red</button>`;
 }
 function cardHtml(file) {
@@ -128,10 +150,7 @@ function cardHtml(file) {
         <div class="file-ic">${icon('i-file')}</div>
         <div class="card-main">
           <p class="card-name">${esc(file.nombre)}</p>
-          <div class="card-meta">
-            <span>${formatBytes(file.tamano)} · ${file.bloques} bloque(s)</span>
-            ${trustHtml(file)}
-          </div>
+          <div class="card-meta"><span>${formatBytes(file.tamano)} · ${file.bloques} bloque(s)</span>${trustHtml(file)}</div>
         </div>
         ${badgeHtml(file)}
       </div>
@@ -144,8 +163,9 @@ function cardHtml(file) {
     </article>`;
 }
 
-// ---------- Descarga con progreso (SSE) ----------
-function startDownload(hash) {
+// ---------- Descarga en el navegador ----------
+async function startDownload(hash) {
+  const file = findFile(hash);
   const card = $(`#card-${CSS.escape(hash)}`);
   const btn = card.querySelector('[data-action="download"]');
   const prog = card.querySelector('[data-progress]');
@@ -156,48 +176,44 @@ function startDownload(hash) {
 
   btn.disabled = true;
   prog.classList.add('show');
-  let total = 0;
-  const tally = {};
-  let finished = false;
+  status.textContent = 'Buscando bloques en la red local…';
 
-  const setBar = (done) => {
-    if (!total) return;
-    fill.style.width = `${Math.round((done / total) * 100)}%`;
-    count.textContent = `bloque ${done}/${total}`;
-  };
-  const renderSeeds = () => {
-    seeds.innerHTML = Object.entries(tally)
-      .map(([n, c]) => `<span class="seed-chip">${esc(n)} <b>${c}</b></span>`).join('');
-  };
-
-  const es = new EventSource(`/api/download?hash=${encodeURIComponent(hash)}`);
-  es.onmessage = (e) => {
-    const evt = JSON.parse(e.data);
-    switch (evt.type) {
-      case 'authenticated': status.textContent = 'Firma de la autoridad verificada…'; break;
-      case 'peers': status.textContent = `Compañeros encontrados: ${evt.peers.join(', ')}`; break;
-      case 'chunks': total = evt.total; status.textContent = 'Descargando bloques en paralelo…'; setBar(0); break;
-      case 'resumed': if (evt.resumed > 0) { status.textContent = `Reanudando (${evt.resumed} ya estaban)…`; setBar(evt.completed); } break;
-      case 'block': tally[evt.from] = (tally[evt.from] || 0) + 1; setBar(evt.completed); renderSeeds(); break;
-      case 'assembling': status.textContent = 'Ensamblando y verificando integridad…'; break;
-      case 'done':
-        finished = true; es.close();
-        fill.style.width = '100%';
-        status.textContent = '✓ Verificado y guardado en este dispositivo';
-        setTimeout(refresh, 700);
-        break;
-      case 'error':
-        finished = true; es.close();
-        showError(prog, evt.message); btn.disabled = false;
-        break;
+  const onProgress = (evt) => {
+    if (evt.type === 'chunks') { count.textContent = `bloque ${evt.completed}/${evt.total}`; }
+    if (evt.type === 'chunk') {
+      fill.style.width = `${Math.round((evt.completed / evt.total) * 100)}%`;
+      count.textContent = `bloque ${evt.completed}/${evt.total}`;
+      status.textContent = 'Descargando bloques…';
+      seeds.innerHTML =
+        `<span class="seed-chip">${icon('i-wifi')} de compañeros <b>${evt.stats.peer}</b></span>` +
+        `<span class="seed-chip">${icon('i-layers')} del central <b>${evt.stats.central}</b></span>`;
+    }
+    if (evt.type === 'done') {
+      fill.style.width = '100%';
+      status.textContent = '✓ Verificado y guardado en este dispositivo';
     }
   };
-  es.onerror = () => {
-    if (finished) return;
-    finished = true; es.close();
-    showError(prog, 'Se interrumpió la conexión con la red local.');
+
+  try {
+    await downloadFile(hash, file.mime, onProgress);
+    state.avail[hash] = true;
+    setTimeout(renderContent, 600); // refresca la card a "Abrir / Compartiendo"
+  } catch (err) {
+    showError(prog, err.message);
     btn.disabled = false;
-  };
+  }
+}
+
+async function openFile(hash) {
+  const file = findFile(hash);
+  try {
+    const blob = await assembleBlob(hash, file.bloques, file.mime);
+    const url = URL.createObjectURL(blob);
+    window.open(url, '_blank');
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  } catch (err) {
+    alert('No se pudo abrir: ' + err.message);
+  }
 }
 
 function showError(prog, message) {
@@ -206,11 +222,6 @@ function showError(prog, message) {
   el.innerHTML = `${icon('i-alert')} ${esc(message)}`;
 }
 
-async function refresh() {
-  const catalog = await fetch('/api/catalog').then((r) => r.json());
-  state.tree = catalog.tree;
-  renderContent();
-}
-
 initTheme();
+initPeersChip();
 load().catch((err) => { $('#content').innerHTML = `<p class="muted">Error al cargar: ${esc(err.message)}</p>`; });

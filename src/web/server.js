@@ -99,10 +99,10 @@ function serveStatic(res, urlPath) {
  * @param {string} p.nodeName
  * @param {Function} [p.log]
  */
-export function startWebServer({ cat, cacheDir, nodeName, log }) {
+export function startWebServer({ cat, cacheDir, nodeName, getChunkInfo, resolveHashToFile, log }) {
   const activeDownloads = new Set(); // evita descargas duplicadas del mismo hash
 
-  const server = http.createServer((req, res) => {
+  const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
     const route = url.pathname;
 
@@ -176,6 +176,28 @@ export function startWebServer({ cat, cacheDir, nodeName, log }) {
         'Content-Length': fs.statSync(full).size,
       });
       return fs.createReadStream(full).pipe(res);
+    }
+
+    // ---- API: lista de bloques (para la descarga en el navegador) ----
+    if (route === '/api/chunks') {
+      const hash = url.searchParams.get('hash');
+      const info = hash && getChunkInfo ? await getChunkInfo(hash) : null;
+      if (!info) return sendJson(res, 404, { found: false });
+      return sendJson(res, 200, { found: true, size: info.size, chunkSize: info.chunkSize, chunkHashes: info.chunkHashes });
+    }
+
+    // ---- API: UN bloque por HTTP (origen / respaldo del mesh) ----
+    if (route === '/api/chunk') {
+      const hash = url.searchParams.get('hash');
+      const i = Number(url.searchParams.get('index'));
+      const file = hash && resolveHashToFile ? resolveHashToFile(hash) : null;
+      const info = hash && getChunkInfo ? await getChunkInfo(hash) : null;
+      if (!file || !info || !Number.isInteger(i)) { res.writeHead(404); return res.end(); }
+      const start = i * info.chunkSize;
+      if (start >= info.size) { res.writeHead(416); return res.end(); }
+      const end = Math.min(start + info.chunkSize, info.size); // exclusivo
+      res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': end - start });
+      return fs.createReadStream(file, { start, end: end - 1 }).pipe(res);
     }
 
     // ---- Estáticos ----
