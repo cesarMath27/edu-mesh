@@ -1,0 +1,22 @@
+# --- Dependencias ---
+node_modules/
+
+# --- Datos generados por cada nodo (cada "dispositivo" tiene su propio home) ---
+nodes/
+
+# --- Llaves y catálogo firmado: se generan localmente con `npm run setup`. ---
+#     NUNCA subir llaves privadas. Se ignora toda la carpeta keys/ por seguridad.
+keys/
+manifest.json
+
+# --- Proyecto distinto que vive en esta carpeta (Realidad Mixta / Meta Quest) ---
+#     (anclado a la raíz: NO afecta a src/web/public/index.html)
+/index.html
+
+# --- Config local del editor / preview ---
+.claude/
+
+# --- Artefactos varios ---
+*.log
+*.part
+*.out.txt

@@ -1,0 +1,32 @@
+{
+  "name": "edu-mesh",
+  "version": "0.1.0",
+  "description": "Plataforma educativa híbrida y de bajo costo: catálogo offline (SQLite) + distribución de archivos P2P en la red WiFi local + validación criptográfica de contenido curado y legal.",
+  "type": "module",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "keys": "node scripts/generate-keys.js",
+    "setup": "node scripts/setup-demo.js",
+    "seed": "node src/node-seed.js",
+    "student": "node src/node-student.js",
+    "app": "node src/node-app.js",
+    "add": "node scripts/add-content.js",
+    "manifest": "node scripts/build-manifest.js",
+    "import": "node scripts/import-manifest.js"
+  },
+  "keywords": [
+    "p2p",
+    "lan",
+    "offline-first",
+    "education",
+    "sqlite",
+    "ed25519",
+    "content-addressed"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "better-sqlite3": "^11.8.1"
+  }
+}
