@@ -21,7 +21,6 @@ import { openCatalog } from './db/catalog.js';
 import { startFileServer } from './p2p/server.js';
 import { startDiscoveryResponder } from './p2p/discovery.js';
 import { startWebServer } from './web/server.js';
-import { attachSignaling } from './web/signaling.js';
 import { getOrBuildChunkInfo } from './crypto/chunking.js';
 import { DB_PATH, CACHE_DIR, NODE_NAME, CHUNK_SIZE, WEB_PORT } from './config.js';
 import { makeLogger } from './util/log.js';
@@ -56,10 +55,10 @@ const { port } = await startFileServer({ resolveHashToFile, getChunkInfo, log })
 startDiscoveryResponder({ hasHash, getTcpPort: () => port, nodeName: NODE_NAME, log });
 
 // 2) Servidor de UI web local + broker de señalización WebRTC (mesh de navegadores).
-const { server: webServer } = await startWebServer({
+//    (startWebServer arranca también el broker y el tablero del maestro.)
+await startWebServer({
   cat, cacheDir: CACHE_DIR, nodeName: NODE_NAME, getChunkInfo, resolveHashToFile, log,
 });
-attachSignaling(webServer, { log });
 
 log('');
 log(`  Abre la app del catálogo en:  http://localhost:${WEB_PORT}`);

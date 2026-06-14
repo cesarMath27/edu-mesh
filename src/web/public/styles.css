@@ -223,6 +223,54 @@ html[data-theme="dark"] .icon-btn .ic-moon { display: none; }
   .node-chip span:not(.ic), .auth-chip span:not(.ic) { display: none; }
 }
 
+/* ---------- Botón Maestro (appbar) ---------- */
+.maestro-btn {
+  display: inline-flex; align-items: center; gap: 7px; min-height: 40px;
+  padding: 0 13px; border-radius: 10px; cursor: pointer; font-size: 13.5px; font-weight: 600;
+  color: var(--primary-700); background: color-mix(in srgb, var(--primary) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--primary) 30%, transparent);
+  transition: background-color .2s;
+}
+.maestro-btn:hover { background: color-mix(in srgb, var(--primary) 20%, transparent); }
+
+/* ---------- Panel del Modo Maestro ---------- */
+.maestro { max-width: 1200px; margin: 0 auto; padding: 24px 20px 60px; }
+.maestro-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+.maestro-head h2 { display: flex; align-items: center; gap: 10px; margin: 0; font-size: 22px; letter-spacing: -.02em; }
+.maestro-grid { display: grid; grid-template-columns: 360px 1fr; gap: 20px; align-items: start; }
+.card-title { margin: 0 0 4px; font-size: 16px; }
+.small { font-size: 12.5px; }
+
+.form { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; }
+.form label { display: flex; flex-direction: column; gap: 5px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.form input {
+  font: inherit; font-weight: 400; color: var(--text); min-height: 40px;
+  padding: 8px 11px; border-radius: 9px; background: var(--surface-2); border: 1px solid var(--border-strong);
+}
+.form input[type="file"] { padding: 8px; cursor: pointer; }
+.up-status { margin: 4px 0 0; }
+
+/* Resumen por archivo (¿cuántos lo tienen?) */
+.resumen { display: flex; flex-direction: column; gap: 10px; margin: 12px 0 18px; }
+.resumen-row { display: grid; grid-template-columns: 1fr 120px 48px; align-items: center; gap: 12px; font-size: 13.5px; }
+.resumen-row .rn { font-weight: 600; }
+.resumen-row .rn em { font-weight: 400; color: var(--muted); font-style: normal; }
+.rb { height: 8px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--border); overflow: hidden; }
+.rb-fill { display: block; height: 100%; background: linear-gradient(90deg, var(--primary), var(--primary-700)); }
+.rc { text-align: right; font-weight: 700; color: var(--primary-700); }
+
+/* Tabla detalle alumnos × archivos */
+.tabla-scroll { overflow-x: auto; }
+table.dash { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.dash th, table.dash td { padding: 8px 10px; border-bottom: 1px solid var(--border); text-align: center; white-space: nowrap; }
+table.dash thead th { color: var(--muted); font-weight: 600; }
+table.dash tbody th { text-align: left; font-weight: 600; }
+table.dash td.ok { color: var(--ok-fg); font-weight: 700; }
+table.dash td.part { color: var(--warning, #b45309); font-weight: 600; }
+table.dash td.none { color: var(--faint); }
+
+@media (max-width: 760px) { .maestro-grid { grid-template-columns: 1fr; } }
+
 /* ---------- Accesibilidad: movimiento reducido ---------- */
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }

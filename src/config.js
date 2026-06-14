@@ -66,3 +66,8 @@ export const CONCURRENCY = Number(arg('concurrency', 4));
 // --- Capa de UI (servidor web local) ----------------------------------------
 //  Puerto del servidor HTTP que sirve la app de catálogo navegable.
 export const WEB_PORT = Number(arg('web-port', 8080));
+
+// --- Modo Maestro -----------------------------------------------------------
+//  PIN que protege el tablero del maestro y la publicación de contenido, para
+//  que solo el maestro (no los alumnos) pueda firmar y publicar. ¡Cámbialo!
+export const TEACHER_PIN = arg('teacher-pin', 'maestro');

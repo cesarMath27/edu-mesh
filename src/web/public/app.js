@@ -7,6 +7,7 @@
 // =============================================================================
 
 import { mesh, ensureMesh, downloadFile, localAvailability, announceLocal, assembleBlob } from './download.js';
+import { initMaestro } from './maestro.js';
 
 const state = { tree: [], node: null, selected: null, avail: {} };
 
@@ -54,6 +55,11 @@ const findFile = (hash) => flatFiles().find((f) => f.hash === hash);
 
 async function load() {
   await ensureMesh(); // conecta al broker de señalización
+  // Nombre del alumno (para el tablero del maestro). Se guarda local.
+  const name = localStorage.getItem('edu-name') || (`Alumno-${Math.random().toString(36).slice(2, 6)}`);
+  localStorage.setItem('edu-name', name);
+  mesh.hello(name);
+
   const [node, catalog] = await Promise.all([
     fetch('/api/node').then((r) => r.json()),
     fetch('/api/catalog').then((r) => r.json()),
@@ -62,7 +68,19 @@ async function load() {
   state.tree = catalog.tree;
   renderNode();
   await refreshAvailability();   // qué tengo ya en ESTE navegador
-  for (const f of flatFiles()) announceLocal(f.hash); // sirvo lo que tenga
+  for (const f of flatFiles()) {
+    announceLocal(f.hash);                                   // sirvo lo que tenga
+    const av = await localAvailability(f.hash, f.bloques);
+    mesh.progress(f.hash, av.have, av.total);                // reporto avance al tablero
+  }
+  renderTree();
+}
+
+// Recarga el catálogo completo (p.ej. cuando el maestro publica algo nuevo).
+async function reloadCatalog() {
+  const catalog = await fetch('/api/catalog').then((r) => r.json());
+  state.tree = catalog.tree;
+  await refreshAvailability();
   renderTree();
 }
 
@@ -224,4 +242,6 @@ function showError(prog, message) {
 
 initTheme();
 initPeersChip();
+initMaestro();
+window.addEventListener('catalog-changed', () => reloadCatalog().catch(() => {}));
 load().catch((err) => { $('#content').innerHTML = `<p class="muted">Error al cargar: ${esc(err.message)}</p>`; });

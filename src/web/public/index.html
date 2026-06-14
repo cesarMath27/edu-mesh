@@ -42,6 +42,9 @@
     <symbol id="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>
     </symbol>
+    <symbol id="i-board" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/>
+    </symbol>
   </svg>
 
   <header class="appbar">
@@ -61,6 +64,9 @@
         <svg class="ic"><use href="#i-shield-check"/></svg>
         <span id="authCount">…</span>
       </span>
+      <button id="maestroBtn" class="maestro-btn" type="button" title="Modo Maestro">
+        <svg class="ic" aria-hidden="true"><use href="#i-board"/></svg><span>Maestro</span>
+      </button>
       <button id="themeToggle" class="icon-btn" type="button" aria-label="Cambiar tema claro/oscuro">
         <svg class="ic ic-sun"><use href="#i-sun"/></svg>
         <svg class="ic ic-moon"><use href="#i-moon"/></svg>
@@ -77,6 +83,9 @@
       <div id="content"></div>
     </section>
   </main>
+
+  <!-- Panel del Modo Maestro (oculto hasta validar el PIN) -->
+  <div id="maestroPanel" class="maestro" hidden></div>
 
   <script type="module" src="/app.js"></script>
 </body>

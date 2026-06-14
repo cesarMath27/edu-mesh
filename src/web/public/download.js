@@ -106,10 +106,11 @@ export async function downloadFile(hash, mime, onProgress) {
         if (attempts[i] < 5) { queue.push(i); continue; }
         throw new Error(`bloque ${i} corrupto`);
       }
-      // 4) Guardar + anunciar (me vuelvo seeder).
+      // 4) Guardar + anunciar (me vuelvo seeder) + reportar avance al tablero.
       await store.putChunk(hash, i, buf);
       mesh.announce(hash, i);
       completed++; stats[src]++;
+      mesh.progress(hash, completed, total);
       onProgress?.({ type: 'chunk', index: i, src, completed, total, stats });
     }
   }

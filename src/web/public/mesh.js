@@ -35,6 +35,9 @@ export class Mesh {
 
   _send(o) { if (this.ws && this.ws.readyState === 1) this.ws.send(JSON.stringify(o)); }
 
+  hello(name) { this._send({ t: 'hello', name }); }                       // "me llamo así"
+  progress(hash, have, total) { this._send({ t: 'progress', hash, have, total }); } // avance para el tablero
+
   announce(hash, index) { this._send({ t: 'have', hash, index }); }
 
   lookup(hash, index) {
