@@ -4,6 +4,10 @@ node_modules/
 # --- Datos generados por cada nodo (cada "dispositivo" tiene su propio home) ---
 nodes/
 
+# --- Material del curador (libros/videos): pesado y local; se distribuye por
+#     el mesh, NO por git. La estructura va documentada en el README. ---
+contenido/
+
 # --- Llaves y catálogo firmado: se generan localmente con `npm run setup`. ---
 #     NUNCA subir llaves privadas. Se ignora toda la carpeta keys/ por seguridad.
 keys/

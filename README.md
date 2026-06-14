@@ -190,12 +190,39 @@ node scripts/generate-keys.js --list                # lista y estado
 node scripts/generate-keys.js --revoke=<keyId>      # revoca (rotación)
 ```
 
-## Añadir tu propio contenido (curador)
+## Llenar el catálogo con tu material (recomendado: por carpetas)
+
+La estructura de carpetas **ES la clasificación**. Organiza tus libros/videos así:
+
+```
+contenido/
+└── <Escuela>/
+    └── <Materia>/
+        ├── 01 - <Lección>/      # el "01 -" define el ORDEN (se quita del título)
+        │   ├── libro.pdf
+        │   └── video.mp4        # también audios, imágenes, epub…
+        └── 02 - <Lección>/
+            └── apunte.pdf
+```
+
+Y corre un solo comando: hashea, **firma** y arma el catálogo + manifiesto:
+
+```powershell
+node scripts/import-folder.js --home=nodes/semilla    # importa toda la carpeta contenido/
+```
+
+La carpeta es la **fuente de verdad** (el catálogo se reconstruye en cada corrida).
+Para archivos grandes (videos) no hay problema: se trocean y se hashean por streaming.
+
+> **¿De dónde sacar material legal?** Libros de Texto Gratuitos de la SEP (públicos),
+> y Recursos Educativos Abiertos con licencia Creative Commons (Khan Academy en
+> español, PhET, Wikipedia offline/Kiwix, CK-12). La firma garantiza su procedencia.
+
+### Alternativa: añadir UN archivo suelto
 ```powershell
 node scripts/add-content.js --home=nodes/semilla --file="C:/ruta/leccion.pdf" `
   --escuela="Primaria Juárez" --materia="Matemáticas" --leccion="Fracciones" --mime=application/pdf
 node scripts/build-manifest.js --home=nodes/semilla     # regenera manifest.json firmado
-node scripts/import-manifest.js --home=nodes/alumno     # los alumnos lo re-sincronizan
 ```
 
 ## Parámetros (CLI `--flag=` o variable `EDU_*`)

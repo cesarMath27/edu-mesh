@@ -13,6 +13,7 @@
     "student": "node src/node-student.js",
     "app": "node src/node-app.js",
     "add": "node scripts/add-content.js",
+    "content": "node scripts/import-folder.js",
     "manifest": "node scripts/build-manifest.js",
     "import": "node scripts/import-manifest.js"
   },
