@@ -52,6 +52,13 @@ Luego abre 2–3 terminales (ver **Demo** más abajo). Para la app web por dispo
 > (las llaves NO se versionan). Para una malla compartida entre varios, distribuye
 > el mismo `keys/trust-store.json` (pública) + `manifest.json` que firme un curador.
 
+## Lanzar en un clic (para demos en cualquier lugar)
+
+Doble clic en **`iniciar-demo.bat`** (Windows) o **`iniciar-demo.command`** (Mac/Linux):
+instala lo necesario la primera vez, arranca el nodo central, y muestra en pantalla
+la **URL de unión + un código QR** para que los celulares lo **escaneen y entren** —
+sin teclear IPs. (Equivale a `npm run demo`.) Conéctalos a la misma red WiFi/hotspot.
+
 ## Cómo funciona (capas)
 
 | Capa | Tecnología | Archivos clave |

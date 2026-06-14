@@ -12,6 +12,7 @@
     "seed": "node src/node-seed.js",
     "student": "node src/node-student.js",
     "app": "node src/node-app.js",
+    "demo": "node src/node-app.js --home=nodes/semilla --name=Central",
     "add": "node scripts/add-content.js",
     "content": "node scripts/import-folder.js",
     "manifest": "node scripts/build-manifest.js",
@@ -29,6 +30,7 @@
   "license": "MIT",
   "dependencies": {
     "better-sqlite3": "^11.8.1",
+    "qrcode-terminal": "^0.12.0",
     "ws": "^8.21.0"
   }
 }

@@ -24,6 +24,8 @@ import { startWebServer } from './web/server.js';
 import { getOrBuildChunkInfo } from './crypto/chunking.js';
 import { DB_PATH, CACHE_DIR, NODE_NAME, CHUNK_SIZE, WEB_PORT } from './config.js';
 import { makeLogger } from './util/log.js';
+import { lanAddresses, bestLan } from './util/netinfo.js';
+import qrcode from 'qrcode-terminal';
 
 const log = makeLogger(`APP:${NODE_NAME}`, 'magenta');
 
@@ -60,6 +62,21 @@ await startWebServer({
   cat, cacheDir: CACHE_DIR, nodeName: NODE_NAME, getChunkInfo, resolveHashToFile, log,
 });
 
+// Banner de conexión: URL en este equipo, IPs para los celulares y un QR.
+const todas = lanAddresses();
+const mejor = bestLan();
 log('');
-log(`  Abre la app del catálogo en:  http://localhost:${WEB_PORT}`);
-log('  Este dispositivo también está sembrando para sus compañeros. (Ctrl+C para salir)');
+log(`  App en este equipo:   http://localhost:${WEB_PORT}`);
+if (todas.length) {
+  log('  Para celulares/tablets en la MISMA red WiFi:');
+  for (const a of todas) log(`     http://${a.address}:${WEB_PORT}   (${a.iface})`);
+}
+if (mejor) {
+  const url = `http://${mejor.address}:${WEB_PORT}`;
+  log('');
+  log(`  Escanea este QR desde el celular para entrar  (${url}):`);
+  qrcode.generate(url, { small: true }, (q) => console.log('\n' + q));
+} else {
+  log('  ⚠ Conéctate a una red local (router o hotspot) para que entren los celulares.');
+}
+log('  Este equipo también siembra para sus compañeros. (Ctrl+C para salir)');
