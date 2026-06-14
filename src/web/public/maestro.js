@@ -8,11 +8,21 @@
 
 const icon = (id) => `<svg class="ic" aria-hidden="true"><use href="#${id}"/></svg>`;
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const pin = () => sessionStorage.getItem('edu-pin') || '';
+const token = () => sessionStorage.getItem('edu-token') || '';
+
+// Canjea el PIN por un token de sesión (el PIN NO viaja en la URL ni se guarda).
+async function login(pinValue) {
+  const r = await fetch('/api/login', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pin: pinValue }),
+  });
+  if (r.status === 429) throw new Error('Demasiados intentos. Espera un minuto.');
+  if (!r.ok) throw new Error('PIN incorrecto.');
+  sessionStorage.setItem('edu-token', (await r.json()).token);
+}
 
 async function fetchDist() {
-  const r = await fetch('/api/distribution?pin=' + encodeURIComponent(pin()));
-  if (r.status === 403) throw new Error('PIN');
+  const r = await fetch('/api/distribution', { headers: { Authorization: 'Bearer ' + token() } });
+  if (r.status === 401) throw new Error('NO_AUTH');
   return r.json();
 }
 
@@ -25,10 +35,10 @@ export function initMaestro() {
   const close = () => { clearInterval(timer); panel.hidden = true; layout.hidden = false; };
 
   btn.addEventListener('click', async () => {
-    if (!sessionStorage.getItem('edu-pin')) {
+    if (!token()) {
       const p = prompt('PIN de maestro:');
       if (p === null) return;
-      sessionStorage.setItem('edu-pin', p);
+      try { await login(p); } catch (e) { alert(e.message); return; }
     }
     try {
       const data = await fetchDist();
@@ -36,11 +46,11 @@ export function initMaestro() {
       render(panel, data, close);
       clearInterval(timer);
       timer = setInterval(async () => {
-        try { renderDashboard(panel.querySelector('#dashWrap'), await fetchDist()); } catch { /* ignore */ }
+        try { renderDashboard(panel.querySelector('#dashWrap'), await fetchDist()); } catch { /* sesión expirada o sin datos */ }
       }, 3000); // el tablero se refresca solo
-    } catch {
-      sessionStorage.removeItem('edu-pin');
-      alert('PIN incorrecto.');
+    } catch (e) {
+      if (e.message === 'NO_AUTH') { sessionStorage.removeItem('edu-token'); alert('Sesión expirada. Vuelve a entrar con el PIN.'); }
+      else alert(e.message);
     }
   });
 }
@@ -83,7 +93,6 @@ async function publish(panel) {
   const status = panel.querySelector('#upStatus');
   if (!file) { status.textContent = 'Elige un archivo primero.'; return; }
   const params = new URLSearchParams({
-    pin: pin(),
     nombre: file.name,
     escuela: panel.querySelector('#upEscuela').value || 'Sin escuela',
     materia: panel.querySelector('#upMateria').value || 'General',
@@ -94,7 +103,9 @@ async function publish(panel) {
   const btn = panel.querySelector('#upBtn');
   btn.disabled = true; status.textContent = `Subiendo y firmando "${file.name}"…`;
   try {
-    const r = await fetch('/api/upload?' + params.toString(), { method: 'POST', body: file });
+    const r = await fetch('/api/upload?' + params.toString(), {
+      method: 'POST', headers: { Authorization: 'Bearer ' + token() }, body: file,
+    });
     const j = await r.json();
     if (j.ok) {
       status.textContent = `✓ Publicado y firmado (${(j.size / 1048576).toFixed(2)} MB).`;

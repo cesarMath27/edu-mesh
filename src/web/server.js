@@ -25,7 +25,8 @@ import { computeChunkHashes } from '../crypto/chunking.js';
 import { hashFile } from '../crypto/hashing.js';
 import { buildManifest } from '../catalog/manifest.js';
 import { stableStringify } from '../util/stable-json.js';
-import { WEB_PORT, TEACHER_PIN, CHUNK_SIZE, ROOT } from '../config.js';
+import { randomBytes, createHash, timingSafeEqual } from 'node:crypto';
+import { WEB_PORT, TEACHER_PIN, CHUNK_SIZE, ROOT, MAX_UPLOAD_MB } from '../config.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -107,6 +108,28 @@ function serveStatic(res, urlPath) {
 export function startWebServer({ cat, cacheDir, nodeName, getChunkInfo, resolveHashToFile, log }) {
   const activeDownloads = new Set(); // evita descargas duplicadas del mismo hash
   let brokerState = () => [];         // lo fija attachSignaling tras escuchar
+
+  // --- Autenticación del maestro: PIN -> token de sesión (el PIN NUNCA va en la URL) ---
+  const tokens = new Map();                 // token -> expira (ms)
+  const TOKEN_TTL = 8 * 60 * 60 * 1000;     // 8 horas
+  const fails = new Map();                  // ip -> { count, until } (anti fuerza bruta)
+  const pinDigest = createHash('sha256').update(String(TEACHER_PIN)).digest();
+  const clientIp = (req) => req.socket.remoteAddress || 'desconocido';
+  const lockedOut = (req) => { const r = fails.get(clientIp(req)); return !!r && r.until > Date.now(); };
+  const recordFail = (req) => {
+    const k = clientIp(req); const r = fails.get(k) || { count: 0, until: 0 };
+    r.count++; if (r.count >= 5) { r.until = Date.now() + 60000; r.count = 0; } // 5 fallos -> 1 min
+    fails.set(k, r);
+  };
+  const issueToken = () => { const t = randomBytes(24).toString('hex'); tokens.set(t, Date.now() + TOKEN_TTL); return t; };
+  const isTeacher = (req) => {
+    const h = req.headers.authorization || '';
+    const t = h.startsWith('Bearer ') ? h.slice(7) : '';
+    const exp = tokens.get(t);
+    if (!exp) return false;
+    if (Date.now() > exp) { tokens.delete(t); return false; }
+    return true;
+  };
 
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
@@ -206,9 +229,25 @@ export function startWebServer({ cat, cacheDir, nodeName, getChunkInfo, resolveH
       return fs.createReadStream(file, { start, end: end - 1 }).pipe(res);
     }
 
+    // ---- API Maestro: login (PIN -> token). Comparación en tiempo constante. ----
+    if (route === '/api/login' && req.method === 'POST') {
+      if (lockedOut(req)) return sendJson(res, 429, { error: 'Demasiados intentos. Espera 1 minuto.' });
+      let body = '';
+      req.on('data', (c) => { body += c; if (body.length > 1000) req.destroy(); });
+      req.on('end', () => {
+        let pin = '';
+        try { pin = String(JSON.parse(body || '{}').pin || ''); } catch { /* cuerpo inválido */ }
+        const ok = timingSafeEqual(createHash('sha256').update(pin).digest(), pinDigest);
+        if (!ok) { recordFail(req); return sendJson(res, 401, { error: 'PIN incorrecto' }); }
+        fails.delete(clientIp(req));
+        sendJson(res, 200, { token: issueToken() });
+      });
+      return;
+    }
+
     // ---- API Maestro: tablero de distribución (¿quién ya lo tiene?) ----
     if (route === '/api/distribution') {
-      if (url.searchParams.get('pin') !== TEACHER_PIN) return sendJson(res, 403, { error: 'PIN incorrecto' });
+      if (!isTeacher(req)) return sendJson(res, 401, { error: 'No autorizado' });
       const alumnos = brokerState();
       const catalogo = cat.listArchivos().map((a) => ({
         hash: a.content_hash,
@@ -222,9 +261,13 @@ export function startWebServer({ cat, cacheDir, nodeName, getChunkInfo, resolveH
 
     // ---- API Maestro: publicar un archivo (firmado) desde el navegador ----
     if (route === '/api/upload' && req.method === 'POST') {
-      if (url.searchParams.get('pin') !== TEACHER_PIN) return sendJson(res, 403, { error: 'PIN incorrecto' });
+      if (!isTeacher(req)) return sendJson(res, 401, { error: 'No autorizado' });
+      const maxBytes = MAX_UPLOAD_MB * 1024 * 1024;
+      if (Number(req.headers['content-length'] || 0) > maxBytes) {
+        return sendJson(res, 413, { error: `archivo demasiado grande (máx ${MAX_UPLOAD_MB} MB)` });
+      }
       const q = url.searchParams;
-      const nombre = q.get('nombre');
+      const nombre = (q.get('nombre') || '').replace(/[\\/\x00-\x1f]/g, '_').slice(0, 150);
       const escuela = q.get('escuela') || 'Sin escuela';
       const materia = q.get('materia') || 'General';
       const leccion = q.get('leccion') || 'Sin lección';
@@ -234,12 +277,22 @@ export function startWebServer({ cat, cacheDir, nodeName, getChunkInfo, resolveH
       const signingKeyId = pickSigningKeyId();
       if (!signingKeyId) return sendJson(res, 500, { error: 'el nodo no tiene llave para firmar' });
 
-      // Recibimos el archivo como cuerpo crudo (sin multipart) → a un temporal.
+      // Recibimos el archivo como cuerpo crudo (sin multipart) → a un temporal,
+      // abortando si supera el límite de tamaño.
       const tmp = path.join(cacheDir, `.upload-${Date.now()}`);
       const out = fs.createWriteStream(tmp);
+      let received = 0; let aborted = false;
+      req.on('data', (c) => {
+        received += c.length;
+        if (received > maxBytes && !aborted) {
+          aborted = true; req.destroy(); out.destroy(); fs.rmSync(tmp, { force: true });
+          sendJson(res, 413, { error: `archivo demasiado grande (máx ${MAX_UPLOAD_MB} MB)` });
+        }
+      });
       req.pipe(out);
-      req.on('error', () => { out.destroy(); fs.rmSync(tmp, { force: true }); });
+      req.on('error', () => { if (!aborted) { out.destroy(); fs.rmSync(tmp, { force: true }); } });
       out.on('finish', async () => {
+        if (aborted) return;
         try {
           const info = await computeChunkHashes(tmp, CHUNK_SIZE);
           const contentHash = await hashFile(tmp);
