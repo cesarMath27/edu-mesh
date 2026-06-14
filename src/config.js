@@ -14,6 +14,7 @@
 
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { randomInt } from 'node:crypto';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -69,5 +70,11 @@ export const WEB_PORT = Number(arg('web-port', 8080));
 
 // --- Modo Maestro -----------------------------------------------------------
 //  PIN que protege el tablero del maestro y la publicación de contenido, para
-//  que solo el maestro (no los alumnos) pueda firmar y publicar. ¡Cámbialo!
-export const TEACHER_PIN = arg('teacher-pin', 'maestro');
+//  que solo el maestro (no los alumnos) pueda firmar y publicar.
+//  Por SEGURIDAD: si no se fija con --teacher-pin=..., se genera uno ALEATORIO
+//  de 6 dígitos en cada arranque (se imprime en pantalla). Nunca un PIN débil fijo.
+const _pinArg = arg('teacher-pin');
+export const TEACHER_PIN = _pinArg || String(randomInt(100000, 1000000));
+export const TEACHER_PIN_IS_GENERATED = !_pinArg;
+//  Tamaño máximo de un archivo publicado desde el navegador (MB).
+export const MAX_UPLOAD_MB = Number(arg('max-upload-mb', 600));

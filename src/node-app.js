@@ -22,7 +22,7 @@ import { startFileServer } from './p2p/server.js';
 import { startDiscoveryResponder } from './p2p/discovery.js';
 import { startWebServer } from './web/server.js';
 import { getOrBuildChunkInfo } from './crypto/chunking.js';
-import { DB_PATH, CACHE_DIR, NODE_NAME, CHUNK_SIZE, WEB_PORT } from './config.js';
+import { DB_PATH, CACHE_DIR, NODE_NAME, CHUNK_SIZE, WEB_PORT, TEACHER_PIN, TEACHER_PIN_IS_GENERATED } from './config.js';
 import { makeLogger } from './util/log.js';
 import { lanAddresses, bestLan } from './util/netinfo.js';
 import qrcode from 'qrcode-terminal';
@@ -79,4 +79,7 @@ if (mejor) {
 } else {
   log('  ⚠ Conéctate a una red local (router o hotspot) para que entren los celulares.');
 }
+log('');
+log(`  🔑 PIN del Modo Maestro: ${TEACHER_PIN}`);
+if (TEACHER_PIN_IS_GENERATED) log('     (generado al azar para esta sesión · fíjalo con --teacher-pin=TUPIN)');
 log('  Este equipo también siembra para sus compañeros. (Ctrl+C para salir)');
