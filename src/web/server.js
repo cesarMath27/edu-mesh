@@ -19,8 +19,13 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { robustDownload } from '../p2p/download-manager.js';
-import { listAuthorities } from '../crypto/keystore.js';
-import { WEB_PORT } from '../config.js';
+import { attachSignaling } from './signaling.js';
+import { listAuthorities, pickSigningKeyId, signDetached } from '../crypto/keystore.js';
+import { computeChunkHashes } from '../crypto/chunking.js';
+import { hashFile } from '../crypto/hashing.js';
+import { buildManifest } from '../catalog/manifest.js';
+import { stableStringify } from '../util/stable-json.js';
+import { WEB_PORT, TEACHER_PIN, CHUNK_SIZE, ROOT } from '../config.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -101,6 +106,7 @@ function serveStatic(res, urlPath) {
  */
 export function startWebServer({ cat, cacheDir, nodeName, getChunkInfo, resolveHashToFile, log }) {
   const activeDownloads = new Set(); // evita descargas duplicadas del mismo hash
+  let brokerState = () => [];         // lo fija attachSignaling tras escuchar
 
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
@@ -200,6 +206,74 @@ export function startWebServer({ cat, cacheDir, nodeName, getChunkInfo, resolveH
       return fs.createReadStream(file, { start, end: end - 1 }).pipe(res);
     }
 
+    // ---- API Maestro: tablero de distribución (¿quién ya lo tiene?) ----
+    if (route === '/api/distribution') {
+      if (url.searchParams.get('pin') !== TEACHER_PIN) return sendJson(res, 403, { error: 'PIN incorrecto' });
+      const alumnos = brokerState();
+      const catalogo = cat.listArchivos().map((a) => ({
+        hash: a.content_hash,
+        nombre: a.nombre,
+        materia: a.materia,
+        leccion: a.leccion,
+        bloques: Math.max(1, Math.ceil(a.tamano / a.chunk_size)),
+      }));
+      return sendJson(res, 200, { alumnos, catalogo });
+    }
+
+    // ---- API Maestro: publicar un archivo (firmado) desde el navegador ----
+    if (route === '/api/upload' && req.method === 'POST') {
+      if (url.searchParams.get('pin') !== TEACHER_PIN) return sendJson(res, 403, { error: 'PIN incorrecto' });
+      const q = url.searchParams;
+      const nombre = q.get('nombre');
+      const escuela = q.get('escuela') || 'Sin escuela';
+      const materia = q.get('materia') || 'General';
+      const leccion = q.get('leccion') || 'Sin lección';
+      const orden = Number(q.get('orden') || 0);
+      const mime = q.get('mime') || 'application/octet-stream';
+      if (!nombre) return sendJson(res, 400, { error: 'falta el nombre del archivo' });
+      const signingKeyId = pickSigningKeyId();
+      if (!signingKeyId) return sendJson(res, 500, { error: 'el nodo no tiene llave para firmar' });
+
+      // Recibimos el archivo como cuerpo crudo (sin multipart) → a un temporal.
+      const tmp = path.join(cacheDir, `.upload-${Date.now()}`);
+      const out = fs.createWriteStream(tmp);
+      req.pipe(out);
+      req.on('error', () => { out.destroy(); fs.rmSync(tmp, { force: true }); });
+      out.on('finish', async () => {
+        try {
+          const info = await computeChunkHashes(tmp, CHUNK_SIZE);
+          const contentHash = await hashFile(tmp);
+          const record = { contentHash, chunksRoot: info.chunksRoot, size: info.size, chunkSize: info.chunkSize };
+          const { keyId, signature } = signDetached(stableStringify(record), signingKeyId);
+
+          const escuelaId = cat.findOrCreateEscuela(escuela);
+          const materiaId = cat.findOrCreateMateria(escuelaId, materia);
+          const leccionId = cat.findOrCreateLeccion(materiaId, leccion, orden);
+          cat.upsertArchivo({
+            leccionId, nombre, mime, tamano: info.size,
+            contentHash, chunkSize: info.chunkSize, chunksRoot: info.chunksRoot,
+            firma: signature, firmaKeyId: keyId, estado: 'disponible',
+          });
+
+          const dest = path.join(cacheDir, contentHash);
+          if (fs.existsSync(dest)) fs.rmSync(tmp, { force: true });
+          else fs.renameSync(tmp, dest);
+          fs.writeFileSync(`${dest}.chunks.json`, JSON.stringify(info));
+
+          // Regeneramos el manifiesto firmado para que otros nodos re-sincronicen.
+          fs.writeFileSync(path.join(ROOT, 'manifest.json'),
+            JSON.stringify(buildManifest(cat.exportTree(), signingKeyId), null, 2));
+
+          log?.(`📤 Maestro publicó "${nombre}" (${info.size} B) en ${materia} / ${leccion}`);
+          sendJson(res, 200, { ok: true, hash: contentHash, nombre, size: info.size });
+        } catch (err) {
+          fs.rmSync(tmp, { force: true });
+          sendJson(res, 500, { error: err.message });
+        }
+      });
+      return;
+    }
+
     // ---- Estáticos ----
     if (req.method === 'GET') return serveStatic(res, route);
     res.writeHead(405, { 'Content-Type': 'text/plain' });
@@ -208,6 +282,8 @@ export function startWebServer({ cat, cacheDir, nodeName, getChunkInfo, resolveH
 
   return new Promise((resolve) => {
     server.listen(WEB_PORT, () => {
+      const broker = attachSignaling(server, { log }); // broker WebRTC + estado de distribución
+      brokerState = broker.getState;
       log?.(`🌐 UI disponible en http://localhost:${WEB_PORT}`);
       resolve({ server, port: WEB_PORT });
     });

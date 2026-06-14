@@ -42,6 +42,20 @@ export function openCatalog(dbPath) {
       db.prepare('INSERT INTO lecciones (materia_id, titulo, descripcion, orden) VALUES (?, ?, ?, ?)')
         .run(materiaId, titulo, descripcion, orden).lastInsertRowid,
 
+    // ---- Buscar-o-crear (las usa la publicación desde el navegador) ----
+    findOrCreateEscuela: (nombre) => {
+      const row = db.prepare('SELECT id FROM escuelas WHERE nombre = ?').get(nombre);
+      return row ? row.id : db.prepare('INSERT INTO escuelas (nombre) VALUES (?)').run(nombre).lastInsertRowid;
+    },
+    findOrCreateMateria: (escuelaId, nombre) => {
+      const row = db.prepare('SELECT id FROM materias WHERE escuela_id = ? AND nombre = ?').get(escuelaId, nombre);
+      return row ? row.id : db.prepare('INSERT INTO materias (escuela_id, nombre) VALUES (?, ?)').run(escuelaId, nombre).lastInsertRowid;
+    },
+    findOrCreateLeccion: (materiaId, titulo, orden = 0) => {
+      const row = db.prepare('SELECT id FROM lecciones WHERE materia_id = ? AND titulo = ?').get(materiaId, titulo);
+      return row ? row.id : db.prepare('INSERT INTO lecciones (materia_id, titulo, orden) VALUES (?, ?, ?)').run(materiaId, titulo, orden).lastInsertRowid;
+    },
+
     /** Inserta un archivo firmado; si el hash ya existe, solo actualiza el estado. */
     upsertArchivo: ({
       leccionId, nombre, mime, tamano,
