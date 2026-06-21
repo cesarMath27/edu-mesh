@@ -1,0 +1,4 @@
+{
+  "_comentario": "Lista de paquetes de contenido publicados. Genera uno con 'npm run pack', súbelo a tu hosting y agrégalo aquí.",
+  "packs": []
+}

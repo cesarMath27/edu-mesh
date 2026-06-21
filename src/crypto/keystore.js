@@ -81,6 +81,26 @@ export function addAuthority(label = 'Autoridad Curadora') {
   return { keyId: kid, label, publicKeyPem };
 }
 
+/**
+ * Confía en una autoridad por su llave PÚBLICA (sin generar par nuevo).
+ * La usa `sync` para aceptar la autoridad de un paquete descargado (TOFU).
+ * Verifica que el keyId corresponda a la llave para evitar suplantación.
+ */
+export function addTrustedPublic({ keyId: kid, publicKey, label }) {
+  if (keyId(publicKey) !== kid) throw new Error('La llave pública no corresponde a su keyId.');
+  const ts = loadTrustStore();
+  if (ts.authorities[kid]) return ts.authorities[kid];
+  ts.authorities[kid] = {
+    label: label || 'Autoridad importada',
+    publicKey,
+    addedAt: new Date().toISOString(),
+    revoked: false,
+    hasPrivate: false,
+  };
+  saveTrustStore();
+  return ts.authorities[kid];
+}
+
 /** Marca una autoridad como revocada (sus firmas dejan de ser válidas). */
 export function revokeAuthority(kid) {
   const ts = loadTrustStore();
