@@ -16,7 +16,9 @@
     "add": "node scripts/add-content.js",
     "content": "node scripts/import-folder.js",
     "manifest": "node scripts/build-manifest.js",
-    "import": "node scripts/import-manifest.js"
+    "import": "node scripts/import-manifest.js",
+    "pack": "node scripts/build-pack.js",
+    "sync": "node scripts/sync.js"
   },
   "keywords": [
     "p2p",
@@ -29,8 +31,9 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "better-sqlite3": "^11.8.1",
+    "node-sqlite3-wasm": "^0.8.58",
     "qrcode-terminal": "^0.12.0",
+    "selfsigned": "^5.5.0",
     "ws": "^8.21.0"
   }
 }

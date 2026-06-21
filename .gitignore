@@ -20,7 +20,11 @@ manifest.json
 # --- Config local del editor / preview ---
 .claude/
 
+# --- Paquete de contenido publicable (se genera con npm run pack) ---
+dist-pack/
+
 # --- Artefactos varios ---
 *.log
 *.part
 *.out.txt
+*.xlsx
