@@ -22,7 +22,7 @@ import { startFileServer } from './p2p/server.js';
 import { startDiscoveryResponder } from './p2p/discovery.js';
 import { startWebServer } from './web/server.js';
 import { getOrBuildChunkInfo } from './crypto/chunking.js';
-import { DB_PATH, CACHE_DIR, NODE_NAME, CHUNK_SIZE, WEB_PORT, TEACHER_PIN, TEACHER_PIN_IS_GENERATED } from './config.js';
+import { DB_PATH, CACHE_DIR, NODE_NAME, CHUNK_SIZE, WEB_PORT, TEACHER_PIN, TEACHER_PIN_IS_GENERATED, TLS } from './config.js';
 import { makeLogger } from './util/log.js';
 import { lanAddresses, bestLan } from './util/netinfo.js';
 import qrcode from 'qrcode-terminal';
@@ -63,16 +63,17 @@ await startWebServer({
 });
 
 // Banner de conexión: URL en este equipo, IPs para los celulares y un QR.
+const proto = TLS ? 'https' : 'http';
 const todas = lanAddresses();
 const mejor = bestLan();
 log('');
-log(`  App en este equipo:   http://localhost:${WEB_PORT}`);
+log(`  App en este equipo:   ${proto}://localhost:${WEB_PORT}`);
 if (todas.length) {
   log('  Para celulares/tablets en la MISMA red WiFi:');
-  for (const a of todas) log(`     http://${a.address}:${WEB_PORT}   (${a.iface})`);
+  for (const a of todas) log(`     ${proto}://${a.address}:${WEB_PORT}   (${a.iface})`);
 }
 if (mejor) {
-  const url = `http://${mejor.address}:${WEB_PORT}`;
+  const url = `${proto}://${mejor.address}:${WEB_PORT}`;
   log('');
   log(`  Escanea este QR desde el celular para entrar  (${url}):`);
   qrcode.generate(url, { small: true }, (q) => console.log('\n' + q));

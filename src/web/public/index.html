@@ -87,6 +87,8 @@
   <!-- Panel del Modo Maestro (oculto hasta validar el PIN) -->
   <div id="maestroPanel" class="maestro" hidden></div>
 
+  <!-- Verificador Ed25519 (JS puro, define window.nacl). Antes del módulo. -->
+  <script src="/vendor/nacl-fast.min.js"></script>
   <script type="module" src="/app.js"></script>
 </body>
 </html>

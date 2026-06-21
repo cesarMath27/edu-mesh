@@ -14,19 +14,21 @@
 // =============================================================================
 
 import http from 'node:http';
+import https from 'node:https';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { robustDownload } from '../p2p/download-manager.js';
 import { attachSignaling } from './signaling.js';
+import { ensureTlsCert } from './tls.js';
 import { listAuthorities, pickSigningKeyId, signDetached } from '../crypto/keystore.js';
 import { computeChunkHashes } from '../crypto/chunking.js';
 import { hashFile } from '../crypto/hashing.js';
 import { buildManifest } from '../catalog/manifest.js';
 import { stableStringify } from '../util/stable-json.js';
 import { randomBytes, createHash, timingSafeEqual } from 'node:crypto';
-import { WEB_PORT, TEACHER_PIN, CHUNK_SIZE, ROOT, MAX_UPLOAD_MB } from '../config.js';
+import { WEB_PORT, TEACHER_PIN, CHUNK_SIZE, ROOT, MAX_UPLOAD_MB, TLS } from '../config.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -67,6 +69,11 @@ function buildCatalogTree(cat, cacheDir) {
       cached: fs.existsSync(path.join(cacheDir, a.content_hash)),
       autoridad: firmante ? firmante.label : 'desconocida',
       autoridadRevocada: firmante ? firmante.revoked : true,
+      // Datos para que el NAVEGADOR verifique la firma Ed25519 por sí mismo:
+      chunksRoot: a.chunks_root,
+      chunkSize: a.chunk_size,
+      firma: a.firma,
+      firmaKeyId: a.firma_key_id,
     });
   }
   // Map -> arrays anidados
@@ -105,7 +112,7 @@ function serveStatic(res, urlPath) {
  * @param {string} p.nodeName
  * @param {Function} [p.log]
  */
-export function startWebServer({ cat, cacheDir, nodeName, getChunkInfo, resolveHashToFile, log }) {
+export async function startWebServer({ cat, cacheDir, nodeName, getChunkInfo, resolveHashToFile, log }) {
   const activeDownloads = new Set(); // evita descargas duplicadas del mismo hash
   let brokerState = () => [];         // lo fija attachSignaling tras escuchar
 
@@ -131,7 +138,7 @@ export function startWebServer({ cat, cacheDir, nodeName, getChunkInfo, resolveH
     return true;
   };
 
-  const server = http.createServer(async (req, res) => {
+  const handler = async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
     const route = url.pathname;
 
@@ -331,13 +338,18 @@ export function startWebServer({ cat, cacheDir, nodeName, getChunkInfo, resolveH
     if (req.method === 'GET') return serveStatic(res, route);
     res.writeHead(405, { 'Content-Type': 'text/plain' });
     res.end('Método no permitido');
-  });
+  };
+
+  // HTTPS si --tls (token y datos cifrados en la LAN); si no, HTTP.
+  const server = TLS
+    ? https.createServer(await ensureTlsCert({ log }), handler)
+    : http.createServer(handler);
 
   return new Promise((resolve) => {
     server.listen(WEB_PORT, () => {
       const broker = attachSignaling(server, { log }); // broker WebRTC + estado de distribución
       brokerState = broker.getState;
-      log?.(`🌐 UI disponible en http://localhost:${WEB_PORT}`);
+      log?.(`🌐 UI disponible en ${TLS ? 'https' : 'http'}://localhost:${WEB_PORT}`);
       resolve({ server, port: WEB_PORT });
     });
   });

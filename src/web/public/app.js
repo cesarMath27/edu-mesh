@@ -8,8 +8,9 @@
 
 import { mesh, ensureMesh, downloadFile, localAvailability, announceLocal, assembleBlob } from './download.js';
 import { initMaestro } from './maestro.js';
+import { verifyFileRecord } from './verify-sig.js';
 
-const state = { tree: [], node: null, selected: null, avail: {} };
+const state = { tree: [], node: null, selected: null, avail: {}, verified: {}, authIdx: {} };
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const icon = (id) => `<svg class="ic" aria-hidden="true"><use href="#${id}"/></svg>`;
@@ -67,6 +68,8 @@ async function load() {
   state.node = node;
   state.tree = catalog.tree;
   renderNode();
+  buildAuthIndex();
+  verifyAll();                   // verifica las firmas Ed25519 en ESTE navegador
   await refreshAvailability();   // qué tengo ya en ESTE navegador
   for (const f of flatFiles()) {
     announceLocal(f.hash);                                   // sirvo lo que tenga
@@ -80,6 +83,7 @@ async function load() {
 async function reloadCatalog() {
   const catalog = await fetch('/api/catalog').then((r) => r.json());
   state.tree = catalog.tree;
+  verifyAll();
   await refreshAvailability();
   renderTree();
 }
@@ -93,6 +97,14 @@ function renderNode() {
 
 async function refreshAvailability() {
   for (const f of flatFiles()) state.avail[f.hash] = (await localAvailability(f.hash, f.bloques)).complete;
+}
+
+// ---------- Verificación de firmas Ed25519 (en el navegador, con TweetNaCl) ----------
+function buildAuthIndex() {
+  state.authIdx = Object.fromEntries((state.node.authorities || []).map((a) => [a.keyId, { publicKey: a.publicKey, revoked: a.revoked }]));
+}
+function verifyAll() {
+  for (const f of flatFiles()) state.verified[f.hash] = verifyFileRecord(f, state.authIdx);
 }
 
 // ---------- Árbol (sidebar) ----------
@@ -151,11 +163,15 @@ function badgeHtml(file) {
   return `<span class="badge net">${icon('i-wifi')} Disponible en la red</span>`;
 }
 function trustHtml(file) {
-  return file.autoridadRevocada
-    ? `<span class="trust bad">${icon('i-shield-alert')} Firma no confiable (${esc(file.autoridad)})</span>`
-    : `<span class="trust ok">${icon('i-shield-check')} Firmado por ${esc(file.autoridad)}</span>`;
+  return state.verified[file.hash]
+    ? `<span class="trust ok">${icon('i-shield-check')} Firma verificada · ${esc(file.autoridad)}</span>`
+    : `<span class="trust bad">${icon('i-shield-alert')} Firma NO válida o autoridad no confiable</span>`;
 }
 function actionHtml(file) {
+  // Sin firma válida verificada en el navegador, no se permite descargar ni abrir.
+  if (!state.verified[file.hash]) {
+    return `<span class="trust bad">${icon('i-alert')} Bloqueado por seguridad: firma no válida</span>`;
+  }
   return state.avail[file.hash]
     ? `<button class="btn primary" type="button" data-action="open" data-hash="${file.hash}">${icon('i-file')} Abrir PDF</button>
        <span class="seed-chip" title="Compartiendo con tus compañeros">${icon('i-wifi')} Compartiendo</span>`
@@ -183,6 +199,7 @@ function cardHtml(file) {
 
 // ---------- Descarga en el navegador ----------
 async function startDownload(hash) {
+  if (!state.verified[hash]) { alert('Firma no válida: descarga bloqueada por seguridad.'); return; }
   const file = findFile(hash);
   const card = $(`#card-${CSS.escape(hash)}`);
   const btn = card.querySelector('[data-action="download"]');
