@@ -1,17 +1,22 @@
 // =============================================================================
-//  ACCESO A DATOS (DAO) DEL CATÁLOGO  — sobre better-sqlite3 (síncrono)
+//  ACCESO A DATOS (DAO) DEL CATÁLOGO  — sobre node-sqlite3-wasm
 // -----------------------------------------------------------------------------
-//  `openCatalog(dbPath)` abre/crea una base de datos en la ruta indicada,
-//  aplica el esquema y devuelve un objeto con consultas listas para usar.
-//  Recibe la ruta como parámetro para poder manejar VARIOS nodos (homes) a la vez
-//  (lo aprovechan los scripts de preparación e importación de manifiesto).
+//  SQLite real corriendo en WebAssembly, con acceso DIRECTO al archivo en disco.
+//  Ventaja clave: NO compila binarios nativos → "clonar y correr" funciona en
+//  CUALQUIER máquina y CUALQUIER versión de Node, sin prebuilds ni Visual Studio.
+//
+//  `openCatalog(dbPath)` abre/crea la base, aplica el esquema y devuelve el DAO.
+//  Usamos los métodos convenientes db.run/get/all (preparan y liberan solos).
+//  IMPORTANTE: hay que llamar cat.close() en los scripts (los procesos largos,
+//  como node-app, la mantienen abierta hasta Ctrl+C).
 // =============================================================================
 
-import Database from 'better-sqlite3';
+import nodeSqlite from 'node-sqlite3-wasm';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+const { Database } = nodeSqlite;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SCHEMA = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
 
@@ -22,94 +27,82 @@ const SCHEMA = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
 export function openCatalog(dbPath) {
   fs.mkdirSync(path.dirname(dbPath), { recursive: true });
   const db = new Database(dbPath);
-  db.pragma('journal_mode = WAL');
-  db.pragma('foreign_keys = ON');
-  db.exec(SCHEMA);
+  db.exec(SCHEMA); // crea tablas/índices (foreign keys van activas por defecto)
 
   const dao = {
     db,
 
     // ---- Altas (las usa el curador / el importador de manifiesto) ----
     insertEscuela: (nombre, localidad) =>
-      db.prepare('INSERT INTO escuelas (nombre, localidad) VALUES (?, ?)')
-        .run(nombre, localidad).lastInsertRowid,
+      db.run('INSERT INTO escuelas (nombre, localidad) VALUES (?, ?)', [nombre, localidad]).lastInsertRowid,
 
     insertMateria: (escuelaId, nombre, grado) =>
-      db.prepare('INSERT INTO materias (escuela_id, nombre, grado) VALUES (?, ?, ?)')
-        .run(escuelaId, nombre, grado).lastInsertRowid,
+      db.run('INSERT INTO materias (escuela_id, nombre, grado) VALUES (?, ?, ?)', [escuelaId, nombre, grado]).lastInsertRowid,
 
     insertLeccion: (materiaId, titulo, descripcion, orden = 0) =>
-      db.prepare('INSERT INTO lecciones (materia_id, titulo, descripcion, orden) VALUES (?, ?, ?, ?)')
-        .run(materiaId, titulo, descripcion, orden).lastInsertRowid,
+      db.run('INSERT INTO lecciones (materia_id, titulo, descripcion, orden) VALUES (?, ?, ?, ?)', [materiaId, titulo, descripcion, orden]).lastInsertRowid,
 
     // ---- Buscar-o-crear (las usa la publicación desde el navegador) ----
     findOrCreateEscuela: (nombre) => {
-      const row = db.prepare('SELECT id FROM escuelas WHERE nombre = ?').get(nombre);
-      return row ? row.id : db.prepare('INSERT INTO escuelas (nombre) VALUES (?)').run(nombre).lastInsertRowid;
+      const row = db.get('SELECT id FROM escuelas WHERE nombre = ?', [nombre]);
+      return row ? row.id : db.run('INSERT INTO escuelas (nombre) VALUES (?)', [nombre]).lastInsertRowid;
     },
     findOrCreateMateria: (escuelaId, nombre) => {
-      const row = db.prepare('SELECT id FROM materias WHERE escuela_id = ? AND nombre = ?').get(escuelaId, nombre);
-      return row ? row.id : db.prepare('INSERT INTO materias (escuela_id, nombre) VALUES (?, ?)').run(escuelaId, nombre).lastInsertRowid;
+      const row = db.get('SELECT id FROM materias WHERE escuela_id = ? AND nombre = ?', [escuelaId, nombre]);
+      return row ? row.id : db.run('INSERT INTO materias (escuela_id, nombre) VALUES (?, ?)', [escuelaId, nombre]).lastInsertRowid;
     },
     findOrCreateLeccion: (materiaId, titulo, orden = 0) => {
-      const row = db.prepare('SELECT id FROM lecciones WHERE materia_id = ? AND titulo = ?').get(materiaId, titulo);
-      return row ? row.id : db.prepare('INSERT INTO lecciones (materia_id, titulo, orden) VALUES (?, ?, ?)').run(materiaId, titulo, orden).lastInsertRowid;
+      const row = db.get('SELECT id FROM lecciones WHERE materia_id = ? AND titulo = ?', [materiaId, titulo]);
+      return row ? row.id : db.run('INSERT INTO lecciones (materia_id, titulo, orden) VALUES (?, ?, ?)', [materiaId, titulo, orden]).lastInsertRowid;
     },
 
     /** Inserta un archivo firmado; si el hash ya existe, solo actualiza el estado. */
-    upsertArchivo: ({
-      leccionId, nombre, mime, tamano,
-      contentHash, chunkSize, chunksRoot, firma, firmaKeyId,
-      estado = 'pendiente',
-    }) =>
-      db.prepare(`
-        INSERT INTO archivos
-          (leccion_id, nombre, mime, tamano, content_hash, chunk_size, chunks_root, firma, firma_key_id, estado)
-        VALUES
-          (@leccionId, @nombre, @mime, @tamano, @contentHash, @chunkSize, @chunksRoot, @firma, @firmaKeyId, @estado)
-        ON CONFLICT(content_hash) DO UPDATE SET estado = excluded.estado
-      `).run({ leccionId, nombre, mime, tamano, contentHash, chunkSize, chunksRoot, firma, firmaKeyId, estado }),
+    upsertArchivo: ({ leccionId, nombre, mime, tamano, contentHash, chunkSize, chunksRoot, firma, firmaKeyId, estado = 'pendiente' }) =>
+      db.run(
+        `INSERT INTO archivos
+           (leccion_id, nombre, mime, tamano, content_hash, chunk_size, chunks_root, firma, firma_key_id, estado)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(content_hash) DO UPDATE SET estado = excluded.estado`,
+        [leccionId, nombre, mime, tamano, contentHash, chunkSize, chunksRoot, firma, firmaKeyId, estado]
+      ),
 
     // ---- Consultas (las usan los nodos en ejecución) ----
     findArchivoByHash: (hash) =>
-      db.prepare('SELECT * FROM archivos WHERE content_hash = ?').get(hash),
+      db.get('SELECT * FROM archivos WHERE content_hash = ?', [hash]),
 
     /** Lista plana de archivos con su contexto (escuela/materia/lección). */
     listArchivos: () =>
-      db.prepare(`
+      db.all(`
         SELECT a.*, l.titulo AS leccion, m.nombre AS materia, e.nombre AS escuela
         FROM archivos a
         JOIN lecciones l ON l.id = a.leccion_id
         JOIN materias  m ON m.id = l.materia_id
         JOIN escuelas  e ON e.id = m.escuela_id
         ORDER BY e.nombre, m.nombre, l.orden, a.nombre
-      `).all(),
+      `),
 
     setEstado: (hash, estado) =>
-      db.prepare('UPDATE archivos SET estado = ? WHERE content_hash = ?').run(estado, hash),
+      db.run('UPDATE archivos SET estado = ? WHERE content_hash = ?', [estado, hash]),
 
     /** Borra todo el catálogo (para re-importar un manifiesto limpio). */
     reset: () => {
       db.exec('DELETE FROM archivos; DELETE FROM lecciones; DELETE FROM materias; DELETE FROM escuelas;');
     },
 
-    /**
-     * Exporta el catálogo como árbol anidado (escuelas->materias->lecciones->archivos)
-     * con los nombres de campo que usa el manifiesto. Lo consume build-manifest.
-     */
+    /** Exporta el catálogo como árbol anidado (lo consume build-manifest/pack). */
     exportTree: () => {
-      const escuelas = db.prepare('SELECT * FROM escuelas ORDER BY nombre').all();
+      const escuelas = db.all('SELECT * FROM escuelas ORDER BY nombre');
       return escuelas.map((e) => ({
         nombre: e.nombre,
         localidad: e.localidad,
-        materias: db.prepare('SELECT * FROM materias WHERE escuela_id = ? ORDER BY nombre').all(e.id).map((m) => ({
+        materias: db.all('SELECT * FROM materias WHERE escuela_id = ? ORDER BY nombre', [e.id]).map((m) => ({
           nombre: m.nombre,
           grado: m.grado,
-          lecciones: db.prepare('SELECT * FROM lecciones WHERE materia_id = ? ORDER BY orden').all(m.id).map((l) => ({
+          lecciones: db.all('SELECT * FROM lecciones WHERE materia_id = ? ORDER BY orden', [m.id]).map((l) => ({
             titulo: l.titulo,
             descripcion: l.descripcion,
             orden: l.orden,
-            archivos: db.prepare('SELECT * FROM archivos WHERE leccion_id = ? ORDER BY nombre').all(l.id).map((a) => ({
+            archivos: db.all('SELECT * FROM archivos WHERE leccion_id = ? ORDER BY nombre', [l.id]).map((a) => ({
               nombre: a.nombre,
               mime: a.mime,
               tamano: a.tamano,

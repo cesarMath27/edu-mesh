@@ -78,3 +78,12 @@ export const TEACHER_PIN = _pinArg || String(randomInt(100000, 1000000));
 export const TEACHER_PIN_IS_GENERATED = !_pinArg;
 //  Tamaño máximo de un archivo publicado desde el navegador (MB).
 export const MAX_UPLOAD_MB = Number(arg('max-upload-mb', 600));
+
+// --- Cifrado del transporte (HTTPS/TLS opcional) ----------------------------
+//  Con --tls la app sirve por HTTPS → token y datos CIFRADOS en la LAN. El
+//  certificado es autofirmado (se genera solo en keys/): el navegador mostrará
+//  un aviso la 1ª vez (Avanzado → Continuar). Bonus: HTTPS desbloquea el contexto
+//  seguro (crypto.subtle nativo, WebRTC más estable, PWA).
+export const TLS = process.argv.includes('--tls') || process.env.EDU_TLS === '1';
+export const TLS_CERT = arg('tls-cert', path.join(KEYS_DIR, 'tls-cert.pem'));
+export const TLS_KEY = arg('tls-key', path.join(KEYS_DIR, 'tls-key.pem'));

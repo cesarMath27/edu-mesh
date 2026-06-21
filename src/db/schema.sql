@@ -6,7 +6,6 @@
 --  y la firma de autorización (firma + firma_key_id) emitida por una autoridad.
 -- =============================================================================
 
-PRAGMA journal_mode = WAL;     -- mejor concurrencia lectura/escritura
 PRAGMA foreign_keys = ON;      -- integridad referencial
 
 CREATE TABLE IF NOT EXISTS escuelas (

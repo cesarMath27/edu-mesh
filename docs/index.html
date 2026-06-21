@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>edu-mesh · Descargar</title>
+  <style>
+    :root{
+      --bg:#eef1f6; --surface:#fff; --surface2:#f4f6fa; --border:#e3e8ef;
+      --text:#0f172a; --muted:#516074; --primary:#4f46e5; --primary7:#4338ca; --on:#fff;
+      --ok-bg:#dcfce7; --ok-fg:#166534;
+    }
+    @media (prefers-color-scheme: dark){:root{
+      --bg:#0a0f1d; --surface:#121a2b; --surface2:#0f1626; --border:#22304a;
+      --text:#e7ecf5; --muted:#9aa7bd; --primary:#6366f1; --primary7:#818cf8;
+      --ok-bg:#0c2c1c; --ok-fg:#86efac;
+    }}
+    *{box-sizing:border-box}
+    body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+      color:var(--text);background:var(--bg);line-height:1.6}
+    .wrap{max-width:860px;margin:0 auto;padding:0 20px}
+    header{display:flex;align-items:center;gap:12px;padding:20px 0}
+    .mark{width:44px;height:44px;border-radius:11px;display:grid;place-items:center;color:#fff;
+      background:linear-gradient(135deg,var(--primary),var(--primary7))}
+    header h1{font-size:20px;margin:0}
+    header p{margin:0;font-size:13px;color:var(--muted)}
+    .hero{text-align:center;padding:36px 0 24px}
+    .hero h2{font-size:30px;letter-spacing:-.02em;margin:0 0 10px}
+    .hero p{font-size:17px;color:var(--muted);max-width:620px;margin:0 auto 22px}
+    .btns{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+    .btn{display:inline-flex;align-items:center;gap:8px;min-height:46px;padding:0 20px;border-radius:11px;
+      font-weight:600;font-size:15px;text-decoration:none;cursor:pointer;border:1px solid transparent}
+    .btn.primary{background:var(--primary);color:#fff}
+    .btn.ghost{background:var(--surface2);color:var(--text);border-color:var(--border)}
+    .feat{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:28px 0}
+    .feat div{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px}
+    .feat b{display:block;margin-bottom:4px}
+    .feat span{font-size:13.5px;color:var(--muted)}
+    section{margin:34px 0}
+    section h3{font-size:20px;margin:0 0 6px}
+    section .sub{color:var(--muted);margin:0 0 16px}
+    .card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px;margin-bottom:14px}
+    code,pre{font-family:ui-monospace,Menlo,Consolas,monospace}
+    pre{background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:12px 14px;
+      overflow-x:auto;font-size:13.5px;margin:10px 0;position:relative}
+    .copy{position:absolute;top:8px;right:8px;font-size:11px;padding:3px 8px;border-radius:6px;cursor:pointer;
+      background:var(--surface);border:1px solid var(--border);color:var(--muted)}
+    .pack{display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;align-items:flex-start}
+    .pack .meta{font-size:13px;color:var(--muted)}
+    .badge{display:inline-block;font-size:12px;font-weight:600;padding:3px 9px;border-radius:999px;
+      background:var(--ok-bg);color:var(--ok-fg)}
+    .flow{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;
+      font-size:13px;color:var(--muted);white-space:pre;overflow-x:auto;font-family:ui-monospace,monospace}
+    footer{color:var(--muted);font-size:13px;text-align:center;padding:30px 0 50px;border-top:1px solid var(--border);margin-top:30px}
+    a{color:var(--primary7)}
+    @media (max-width:640px){.feat{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="mark" aria-hidden="true">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="M2 12l8.58 3.91a2 2 0 0 0 1.66 0L22 12"/><path d="M2 17l8.58 3.91a2 2 0 0 0 1.66 0L22 17"/></svg>
+      </div>
+      <div><h1>edu-mesh</h1><p>Plataforma educativa híbrida · offline · P2P</p></div>
+    </header>
+
+    <div class="hero">
+      <h2>Descarga una vez. Se reparte sola, sin internet.</h2>
+      <p>Catálogo educativo curado y firmado, que se distribuye entre los dispositivos de un salón
+        por WiFi local — sin consumir datos y sin instalar nada en el celular.</p>
+      <div class="btns">
+        <a class="btn primary" href="#app">Descargar la app</a>
+        <a class="btn ghost" href="#packs">Paquetes de contenido</a>
+      </div>
+    </div>
+
+    <div class="feat">
+      <div><b>100% offline</b><span>Funciona sin internet: solo la red WiFi local.</span></div>
+      <div><b>Se reparte sola (P2P)</b><span>Entre más dispositivos, más rápido llega a todos.</span></div>
+      <div><b>Curado y firmado</b><span>Solo contenido oficial y sin alterar (Ed25519).</span></div>
+    </div>
+
+    <section id="app">
+      <h3>1 · Descargar la app</h3>
+      <p class=”sub”>Instálala en una computadora de la escuela (el “nodo central”). Necesita Node 18 o superior (cualquier versión).</p>
+      <div class="card">
+        <strong>Opción A — clonar con git</strong>
+        <pre data-copy>git clone https://github.com/cesarMath27/edu-mesh.git
+cd edu-mesh
+npm install</pre>
+        <strong>Opción B — descargar ZIP</strong><br/>
+        <a class="btn ghost" style="margin-top:10px" href="https://github.com/cesarMath27/edu-mesh/archive/refs/heads/main.zip">Descargar edu-mesh (.zip)</a>
+        <p style="margin:14px 0 0">Luego, doble clic en <code>iniciar-demo.bat</code> (o <code>npm run demo</code>):
+          muestra una URL + código QR para que los celulares entren.</p>
+      </div>
+    </section>
+
+    <section id="packs">
+      <h3>2 · Paquetes de contenido</h3>
+      <p class="sub">La escuela los baja <strong>una sola vez con internet</strong>; después se reparten offline.</p>
+      <div id="packsList"><p class="sub">Cargando paquetes…</p></div>
+    </section>
+
+    <section>
+      <h3>Cómo funciona (híbrido)</h3>
+      <div class="flow">ESTE HUB  ──(internet, una vez)──▶  NODO CENTRAL de la escuela  ──(WiFi local, sin internet)──▶  alumnos (mesh)
+ (catálogo + contenido firmado)      sincroniza y verifica firmas           se reparten entre ellos</div>
+    </section>
+
+    <footer>
+      Código abierto (MIT) ·
+      <a href="https://github.com/cesarMath27/edu-mesh">github.com/cesarMath27/edu-mesh</a>
+    </footer>
+  </div>
+
+  <script>
+    // Copiar bloques de comando
+    document.querySelectorAll('pre[data-copy]').forEach((pre) => {
+      const b = document.createElement('button'); b.className = 'copy'; b.textContent = 'copiar';
+      b.onclick = () => navigator.clipboard.writeText(pre.textContent).then(() => { b.textContent = '¡copiado!'; setTimeout(() => b.textContent = 'copiar', 1500); });
+      pre.appendChild(b);
+    });
+
+    // Lista de paquetes desde packs.json
+    const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    fetch('packs.json').then((r) => r.json()).then(({ packs }) => {
+      const el = document.getElementById('packsList');
+      if (!packs || !packs.length) { el.innerHTML = '<p class="sub">Aún no hay paquetes publicados.</p>'; return; }
+      el.innerHTML = packs.map((p) => `
+        <div class="card">
+          <div class="pack">
+            <div>
+              <strong>${esc(p.nombre)}</strong> <span class="badge">firmado</span>
+              <div class="meta">${esc(p.descripcion || '')}</div>
+              <div class="meta">${p.archivos || 0} archivo(s) · ${p.mb || 0} MB · autoridad: ${esc(p.autoridad || '—')}</div>
+            </div>
+          </div>
+          <p style="margin:12px 0 4px">Sincronízalo en la escuela (una vez con internet):</p>
+          <pre data-copy>node scripts/sync.js --from=${esc(p.url)} --home=nodes/semilla</pre>
+        </div>`).join('');
+      // re-enlazar copiar en los nuevos bloques
+      el.querySelectorAll('pre[data-copy]').forEach((pre) => {
+        const b = document.createElement('button'); b.className = 'copy'; b.textContent = 'copiar';
+        b.onclick = () => navigator.clipboard.writeText(pre.textContent.replace('copiar', '').trim()).then(() => { b.textContent = '¡copiado!'; setTimeout(() => b.textContent = 'copiar', 1500); });
+        pre.appendChild(b);
+      });
+    }).catch(() => { document.getElementById('packsList').innerHTML = '<p class="sub">Aún no hay paquetes publicados.</p>'; });
+  </script>
+</body>
+</html>

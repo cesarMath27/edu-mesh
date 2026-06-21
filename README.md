@@ -1,259 +1,252 @@
-# edu-mesh — Plataforma educativa híbrida, offline y P2P en LAN
+# edu-mesh — Plataforma educativa híbrida, offline y P2P
 
-MVP de una red **mesh de distribución de contenido educativo curado**. Los alumnos
-navegan un **catálogo offline** (SQLite) y descargan archivos pesados (PDFs, videos)
-**directamente de otros dispositivos en la misma red WiFi local**, sin consumir
-internet global. Todo el contenido está **firmado criptográficamente** por una o
-varias **autoridades curadoras**, de modo que cada dispositivo verifica que el
-material es **íntegro, legal y aprobado** antes de aceptarlo.
+**edu-mesh** lleva libros y videos educativos a salones **sin internet**. Una
+computadora de la escuela (el *nodo central*) guarda un catálogo **curado y
+firmado**; los alumnos abren el navegador de su celular —**sin instalar nada**—,
+descargan el material por la WiFi local, y **se lo pasan entre ellos** (P2P). El
+contenido viaja firmado criptográficamente, así cada dispositivo verifica que es
+**oficial y sin alterar** antes de aceptarlo.
 
 ```
-        ┌──────────── RED WiFi LOCAL (sin internet) ────────────┐
-        │                                                        │
-   ┌────────────┐   1) UDP: "¿quién tiene el hash H?"     ┌────────────┐  ┌────────────┐
-   │  ALUMNO     │ ─────────── broadcast ───────────────▶ │  SEMILLA 1  │  │  SEMILLA 2  │
-   │  (Luis)     │                                         │  (Ana)      │  │  (Beto)     │
-   │             │ ◀────── 2) UDP: "yo, en TCP:p" ──────── │  tiene H    │  │  tiene H    │
-   │ catálogo    │                                         └────────────┘  └────────────┘
-   │ (sin H)     │ ─ 3) TCP: bloques EN PARALELO ────────────▲──────────────────▲
-   │             │ ◀──   (chunk 0,2,4 de Ana; 1,3,5 de Beto) ┘                  ┘
-   └────────────┘ 4) Verifica CADA bloque + hash global + firma de autoridad
-        │            ✔ acepta y cachea     ✘ falla → descarta / reintenta
-        └────────────────────────────────────────────────────────────┘
+   HUB EN LÍNEA  ──(internet, UNA vez)──▶  NODO CENTRAL de la escuela  ──(WiFi local, SIN internet)──▶  alumnos
+  (catálogo + contenido                     sincroniza y VERIFICA las                el archivo pesado se
+   firmado, opcional)                        firmas, luego reparte                   reparte ENTRE celulares (mesh)
 ```
 
-## Capacidades
+- **100% offline:** solo necesita la red WiFi local (ni siquiera un router con internet).
+- **Se reparte sola (P2P):** entre más dispositivos tienen un archivo, más rápido llega a los demás.
+- **Curado y firmado (Ed25519):** solo entra contenido de una autoridad confiable; lo alterado se rechaza y se borra.
+- **Sin instalar nada en el celular:** todo corre en el navegador.
+- **Sin dependencias nativas:** `git clone && npm install && correr` funciona en cualquier máquina y cualquier Node ≥ 18 (SQLite va en WebAssembly).
 
-**Cadena de confianza (Feature 1)**
-- **Manifiesto del catálogo firmado**: el curador firma el catálogo COMPLETO; cada
-  dispositivo lo verifica antes de importarlo (detecta también altas/bajas de lecciones).
-- **Múltiples autoridades** en un *trust store* (`keys/trust-store.json`).
-- **Rotación / revocación**: una llave revocada invalida sus firmas al instante.
+---
 
-**Transferencia robusta (Feature 2)**
-- Archivos divididos en **bloques (chunks)** con **verificación por bloque** anclada
-  a una raíz firmada (`chunks_root`).
-- **Descarga en paralelo desde varias semillas** (pool de workers, reparto y reintentos).
-- **Reanudación**: si se corta, retoma solo los bloques que faltan.
+## Características
+
+**Catálogo y contenido**
+- Catálogo local en SQLite (escuelas → materias → lecciones → archivos).
+- **Manifiesto firmado**: el curador firma el catálogo completo; cada dispositivo lo verifica antes de importarlo.
+- **Trust store multi-autoridad** con **rotación/revocación** de llaves.
+- Cargar contenido por **carpetas** (`npm run content`), por **navegador** (Modo Maestro), o **sincronizando** de un hub en línea.
+
+**Distribución P2P**
+- Archivos en **bloques (chunks)** con **verificación por bloque** anclada a una raíz firmada.
+- **Entre nodos (Node):** descubrimiento por **UDP broadcast** + transferencia por **TCP**, en paralelo desde varias semillas, con **reanudación**.
+- **Entre navegadores (celulares):** **WebRTC** directo (broker de señalización por WebSocket en el nodo central), con respaldo **HTTP** al central.
+
+**Interfaz y maestro**
+- App web local: catálogo navegable, descarga con progreso en vivo, abrir PDF, modo claro/oscuro, **lanzador con QR**.
+- **Modo Maestro** (protegido por PIN): **tablero "¿quién ya lo tiene?"** + **publicar contenido** firmado desde el navegador.
+
+**Seguridad**
+- **Firma Ed25519** del contenido + **verificación en el navegador** (un bloque malicioso de otro celular no pasa).
+- **Login por token** para el maestro (el PIN no viaja en la URL) + bloqueo por intentos.
+- **Alumnos anónimos**, sin telemetría, sin CDNs. **HTTPS opcional** (`--tls`).
+
+---
+
+## Cómo funciona (capas y tecnología)
+
+| Capa | Tecnología | Archivos clave |
+|------|-----------|----------------|
+| Catálogo local | SQLite en **WASM** (`node-sqlite3-wasm`, sin binarios nativos) | [schema.sql](src/db/schema.sql), [catalog.js](src/db/catalog.js) |
+| Confianza | Ed25519 + trust store + manifiesto | [keystore.js](src/crypto/keystore.js), [manifest.js](src/catalog/manifest.js) |
+| Bloques | SHA-256 por bloque + raíz firmada | [chunking.js](src/crypto/chunking.js) |
+| Descubrimiento (nodos) | UDP broadcast (`dgram`) | [discovery.js](src/p2p/discovery.js) |
+| Transferencia (nodos) | TCP por bloque (`net`) | [server.js](src/p2p/server.js), [client.js](src/p2p/client.js) |
+| Orquestación | descarga paralela + reanudación | [download-manager.js](src/p2p/download-manager.js) |
+| UI + API + SSE | `http`/`https` nativo | [web/server.js](src/web/server.js), [web/public/](src/web/public/) |
+| Mesh navegador | WebRTC + WebSocket (broker) | [signaling.js](src/web/signaling.js), [public/mesh.js](src/web/public/mesh.js) |
+| Verificación en navegador | TweetNaCl (Ed25519) + SHA-256 JS | [verify-sig.js](src/web/public/verify-sig.js), [sha256.js](src/web/public/sha256.js) |
+| Hub en línea | empaquetar + sincronizar | [build-pack.js](scripts/build-pack.js), [sync.js](scripts/sync.js), [docs/](docs/) |
+
+---
+
+## Estructura del proyecto
+
+```
+edu-mesh/
+├── iniciar-demo.bat / .command   # lanzador de un clic (arranca + muestra QR)
+├── docs/                         # página de descarga (hub) — hosteable gratis
+├── scripts/
+│   ├── generate-keys.js          # gestiona autoridades (alta/lista/revoca)
+│   ├── setup-demo.js             # prepara el demo completo
+│   ├── import-folder.js          # carga contenido desde carpetas (npm run content)
+│   ├── add-content.js            # firma y registra UN archivo
+│   ├── build-manifest.js         # firma el catálogo de un home → manifest.json
+│   ├── import-manifest.js        # verifica e importa un manifiesto
+│   ├── build-pack.js             # empaqueta contenido para el hub (npm run pack)
+│   └── sync.js                   # sincroniza un paquete del hub (npm run sync)
+└── src/
+    ├── config.js                 # configuración por --flag / variables EDU_*
+    ├── node-app.js               # ▶ App por dispositivo: semilla + UI web (RECOMENDADO)
+    ├── node-seed.js / node-student.js   # ▶ nodos CLI (solo P2P entre nodos)
+    ├── util/   log.js · stable-json.js · netinfo.js
+    ├── crypto/ hashing.js · signature.js · keystore.js · chunking.js · validation.js
+    ├── catalog/ manifest.js
+    ├── db/     schema.sql · catalog.js
+    ├── p2p/    discovery.js · server.js · client.js · download-manager.js
+    └── web/    server.js · signaling.js · tls.js · public/{index.html, app.js, mesh.js,
+                 download.js, store.js, maestro.js, verify-sig.js, sha256.js, styles.css, vendor/}
+```
+
+> No se versionan: `node_modules/`, `nodes/` (datos por dispositivo), `keys/` (llaves),
+> `manifest.json`, `contenido/` y `dist-pack/` (se generan localmente).
+
+---
+
+## Requisitos
+- **Node.js ≥ 18** (cualquier versión sirve: SQLite va en WASM, **no compila binarios nativos**).
+- Estar en la misma red WiFi (o una sola PC para el demo).
 
 ## Empezar (clonar y correr)
 
 ```powershell
 git clone https://github.com/cesarMath27/edu-mesh.git
 cd edu-mesh
-npm install      # instala dependencias (better-sqlite3 trae binarios precompilados)
-npm run setup    # genera la autoridad, el catálogo firmado y los dispositivos demo
+npm install      # solo JS/WASM: NO compila nada, funciona en cualquier Node
+npm run setup    # genera la autoridad, el catálogo firmado y un demo de prueba
 ```
 
-Luego abre 2–3 terminales (ver **Demo** más abajo). Para la app web por dispositivo:
-`node src/node-app.js --home=nodes/alumno --name=TuNombre` y abre `http://localhost:8080`.
+**Lanzador de un clic:** doble clic en `iniciar-demo.bat` (Windows) o
+`iniciar-demo.command` (Mac/Linux) → instala lo necesario, arranca el nodo central y
+**muestra la URL + un código QR** para que los celulares lo escaneen y entren.
 
-> Cada quien que clone genera su **propia** autoridad y catálogo con `npm run setup`
-> (las llaves NO se versionan). Para una malla compartida entre varios, distribuye
-> el mismo `keys/trust-store.json` (pública) + `manifest.json` que firme un curador.
+> ⚠️ **Windows/PowerShell:** los comandos con parámetros se corren con `node <script> --flag`,
+> **no** con `npm run <script> -- --flag` (npm no reenvía los argumentos tras `--`).
 
-## Lanzar en un clic (para demos en cualquier lugar)
+---
 
-Doble clic en **`iniciar-demo.bat`** (Windows) o **`iniciar-demo.command`** (Mac/Linux):
-instala lo necesario la primera vez, arranca el nodo central, y muestra en pantalla
-la **URL de unión + un código QR** para que los celulares lo **escaneen y entren** —
-sin teclear IPs. (Equivale a `npm run demo`.) Conéctalos a la misma red WiFi/hotspot.
+## La app por dispositivo (recomendado)
 
-## Cómo funciona (capas)
-
-| Capa | Tecnología | Archivos clave |
-|------|-----------|----------------|
-| Catálogo local | SQLite (`better-sqlite3`) | [schema.sql](src/db/schema.sql), [catalog.js](src/db/catalog.js) |
-| Confianza | Ed25519 + trust store + manifiesto | [keystore.js](src/crypto/keystore.js), [manifest.js](src/catalog/manifest.js) |
-| Bloques | SHA-256 por bloque + raíz | [chunking.js](src/crypto/chunking.js) |
-| Descubrimiento | UDP broadcast (`dgram`) | [discovery.js](src/p2p/discovery.js) |
-| Transferencia | TCP stream por bloque (`net`) | [server.js](src/p2p/server.js), [client.js](src/p2p/client.js) |
-| Orquestación | descarga paralela + reanudación | [download-manager.js](src/p2p/download-manager.js) |
-
-## Estructura del proyecto
-
-```
-edu-mesh/
-├── package.json
-├── README.md
-├── manifest.json               # catálogo firmado (se genera)
-├── keys/
-│   ├── trust-store.json        # públicas de autoridades (se distribuye)
-│   └── private/<keyId>.private.pem   # privadas (NO se versionan)
-├── nodes/                      # cada subcarpeta = un "dispositivo" (se autogenera)
-│   ├── semilla/  → catalog.db + cache/<hash> (+ <hash>.chunks.json)
-│   ├── semilla2/ → catalog.db + cache/<hash>
-│   └── alumno/   → catalog.db + cache/ (+ cache/.partial/<hash>/ al reanudar)
-├── scripts/
-│   ├── generate-keys.js        # gestiona autoridades (alta/lista/revoca)
-│   ├── setup-demo.js           # prepara el demo completo
-│   ├── build-manifest.js       # firma el catálogo de un home → manifest.json
-│   ├── import-manifest.js      # verifica e importa un manifiesto en un home
-│   └── add-content.js          # firma y registra un archivo real (curador)
-└── src/
-    ├── config.js
-    ├── node-app.js             # ▶ App por dispositivo: SEMILLA + UI web (recomendado)
-    ├── node-seed.js            # ▶ Nodo Semilla (CLI, solo comparte)
-    ├── node-student.js         # ▶ Nodo Alumno (CLI, descarga robusta + valida)
-    ├── web/  server.js · public/{index.html, styles.css, app.js}   # capa de UI
-    ├── util/  log.js · stable-json.js
-    ├── crypto/  hashing.js · signature.js · keystore.js · chunking.js · validation.js
-    ├── catalog/ manifest.js
-    ├── db/      schema.sql · catalog.js
-    └── p2p/     discovery.js · server.js · client.js · download-manager.js
-```
-
-## Requisitos
-- **Node.js ≥ 18**.
-- Misma red WiFi (o una sola PC para el demo).
-
-## Instalación
-```powershell
-npm install
-```
-
-> ⚠️ **Importante (Windows / PowerShell):** ejecuta los comandos con parámetros
-> usando **`node <script> --flag`**, NO `npm run <script> -- --flag`.
-> En este entorno npm **no** reenvía los argumentos que van después de `--`.
-> Los scripts sin parámetros (`npm run setup`, `npm run keys`) sí funcionan.
-
-## Demo: alumnos del mismo salón compartiendo un PDF
-
-### Paso 1 — Preparar (una vez)
-```powershell
-npm run setup
-```
-Crea la autoridad curadora, genera un PDF de ~1.5 MB (6 bloques), firma el
-**manifiesto**, y arma 3 dispositivos importándolo+verificándolo: `nodes/semilla`
-y `nodes/semilla2` (con el PDF) y `nodes/alumno` (sin él).
-
-### Paso 2 — Terminal 1 y 2: las semillas
-```powershell
-node src/node-seed.js --home=nodes/semilla  --name=Ana
-node src/node-seed.js --home=nodes/semilla2 --name=Beto
-```
-
-### Paso 3 — Terminal 3: el alumno descarga
-```powershell
-node src/node-student.js --home=nodes/alumno --name=Luis
-```
-Verás el descubrimiento, la descarga de **bloques en paralelo repartidos entre Ana
-y Beto**, la verificación por bloque + hash global + firma, y el guardado en caché.
-A partir de ahí Luis también puede sembrar.
-
-## Interfaz web (recomendado): la app por dispositivo
-
-`node-app.js` corre en UN solo proceso la **semilla P2P + una app web local** para
-navegar el catálogo, descargar con progreso en vivo (SSE) y abrir los PDFs. Cada
-dispositivo ejecuta esto:
+`node-app.js` corre en UN proceso la **semilla P2P + la UI web + el broker WebRTC**:
 
 ```powershell
-# Ana (tiene el PDF) — su app + semilla en el puerto 8081:
-node src/node-app.js --home=nodes/semilla --name=Ana  --web-port=8081
-# Luis (lo descargará) — su app + semilla en el puerto 8080:
-node src/node-app.js --home=nodes/alumno  --name=Luis --web-port=8080
+node src/node-app.js --home=nodes/semilla --name=Central
+# o:  npm run demo
 ```
+Imprime la URL y un QR. Los celulares (misma WiFi) abren `http://<IP>:8080`, navegan el
+catálogo, pulsan **Descargar**, y el archivo se baja por bloques (de compañeros o del
+central), se verifica y se abre. Cada celular que lo baja **se vuelve fuente** para los demás.
 
-Abre `http://localhost:8080` (Luis): explora la materia, pulsa **“Descargar de la
-red”** y mira la barra de progreso (verificación de firma → bloques en paralelo →
-ensamblado). Al terminar, el botón cambia a **“Abrir PDF”**. Soporta modo claro/oscuro.
+### Modo Maestro
+Botón **Maestro** (protegido por PIN; si no lo fijas, se genera uno aleatorio y se imprime
+al arrancar):
+- **Tablero de distribución:** alumnos conectados y cuánto lleva cada quien de cada lección.
+- **Publicar contenido:** arrastra un archivo, el nodo central lo **firma** y lo distribuye.
 
-| Endpoint | Qué hace |
-|----------|----------|
-| `GET /api/catalog` | Árbol del catálogo + estado por archivo (`cached`, firma) |
-| `GET /api/download?hash=` | (SSE) descarga robusta con eventos de progreso |
-| `GET /api/file?hash=` | Sirve el PDF cacheado (inline) |
-
-### Probar la REANUDACIÓN
-Corta el alumno con `Ctrl+C` a mitad de una descarga grande y vuelve a lanzarlo:
-retomará desde los bloques ya válidos en `cache/.partial/<hash>/`
-(`↻ Reanudando: N/M bloques…`).
-
-### Probar la REVOCACIÓN de llaves (cadena de confianza)
 ```powershell
-# Revoca la autoridad y verás que el manifiesto deja de poder importarse:
-$kid = (Get-Content keys/trust-store.json -Raw | ConvertFrom-Json).authorities.PSObject.Properties.Name[0]
-node scripts/generate-keys.js --revoke=$kid
-node scripts/import-manifest.js --home=nodes/test    # → 🛑 RECHAZADO (firma de autoridad revocada)
-npm run setup                                         # restaura todo
+node src/node-app.js --home=nodes/semilla --name=Central --teacher-pin=1234
 ```
 
-### Probar el RECHAZO de contenido manipulado
+---
+
+## Cargar contenido
+
+**Opción A — por carpetas (recomendada para mucho material).** La estructura ES la clasificación:
+```
+contenido/<Escuela>/<Materia>/<NN - Lección>/<archivos.pdf|.mp4|.mp3 ...>
+```
 ```powershell
-# Corrompe un bloque del archivo de una semilla y borra la copia del alumno:
-$hash = (Get-ChildItem nodes/semilla/cache -File | Where-Object Name -notlike '*.chunks.json').Name
-"bytes alterados" | Set-Content "nodes/semilla/cache/$hash"
-Remove-Item "nodes/semilla/cache/$hash.chunks.json","nodes/alumno/cache/$hash" -Force -EA SilentlyContinue
-node src/node-student.js --home=nodes/alumno --name=Luis
-# → el bloque alterado falla su hash; si no hay otra semilla sana, la descarga se rechaza.
-npm run setup   # restaura
+node scripts/import-folder.js --home=nodes/semilla   # (npm run content)
+```
+El prefijo `NN -` define el orden. Soporta PDF, video, audio, imágenes, epub.
+
+**Opción B — desde el navegador:** Modo Maestro → *Publicar material*.
+
+**Opción C — un archivo suelto:**
+```powershell
+node scripts/add-content.js --home=nodes/semilla --file="C:/ruta/leccion.pdf" `
+  --escuela="Primaria Juárez" --materia="Matemáticas" --leccion="Fracciones"
 ```
 
-## Gestión de autoridades (curador)
+### Hub en línea (modelo híbrido)
+Publica el contenido en un sitio estático y que cada escuela lo **sincronice una vez**:
+```powershell
+node scripts/build-pack.js --home=nodes/semilla     # genera dist-pack/ (sube a tu hosting)
+# en cada escuela, con internet una vez:
+node scripts/sync.js --from=https://tusitio/pack --home=nodes/semilla
+```
+`sync` **verifica las firmas**, importa el catálogo y descarga el contenido (comprobando
+cada hash); luego el nodo lo reparte offline. La página del hub está en `docs/`.
+
+---
+
+## Seguridad
+La seguridad está en la **criptografía**, no en esconder el código (es abierto):
+- **Contenido firmado (Ed25519):** solo entra material de una autoridad confiable; lo alterado se rechaza.
+- **Verificación en el navegador (TweetNaCl):** cada celular verifica la firma **por sí mismo** → un bloque malicioso de otro compañero **no pasa**, aunque venga por WebRTC.
+- **Maestro con login por token** (PIN→token, no en la URL) + bloqueo tras 5 intentos.
+- **Alumnos anónimos**, sin telemetría, sin CDNs, 100% offline. SQL parametrizado.
+- **HTTPS opcional** (`--tls`): cifra el transporte (cert autofirmado; el navegador avisa una vez y desbloquea el *contexto seguro*).
+
+### Gestión de autoridades (curador)
 ```powershell
 node scripts/generate-keys.js                       # crea la primera autoridad
-node scripts/generate-keys.js --add --label="UNAM"  # agrega otra autoridad
+node scripts/generate-keys.js --add --label="UNAM"  # agrega otra
 node scripts/generate-keys.js --list                # lista y estado
 node scripts/generate-keys.js --revoke=<keyId>      # revoca (rotación)
 ```
 
-## Llenar el catálogo con tu material (recomendado: por carpetas)
+---
 
-La estructura de carpetas **ES la clasificación**. Organiza tus libros/videos así:
-
-```
-contenido/
-└── <Escuela>/
-    └── <Materia>/
-        ├── 01 - <Lección>/      # el "01 -" define el ORDEN (se quita del título)
-        │   ├── libro.pdf
-        │   └── video.mp4        # también audios, imágenes, epub…
-        └── 02 - <Lección>/
-            └── apunte.pdf
-```
-
-Y corre un solo comando: hashea, **firma** y arma el catálogo + manifiesto:
+## Demo / pruebas
 
 ```powershell
-node scripts/import-folder.js --home=nodes/semilla    # importa toda la carpeta contenido/
+npm run setup
+# Terminal 1 (semilla con el PDF):
+node src/node-app.js --home=nodes/semilla --name=Ana  --web-port=8081
+# Terminal 2 (alumno):
+node src/node-app.js --home=nodes/alumno  --name=Luis --web-port=8080
 ```
+Abre `http://localhost:8080`, descarga, abre el PDF, entra al Modo Maestro con el PIN del banner.
 
-La carpeta es la **fuente de verdad** (el catálogo se reconstruye en cada corrida).
-Para archivos grandes (videos) no hay problema: se trocean y se hashean por streaming.
+**Probar el rechazo:** corrompe un archivo de la semilla y vuelve a descargar → se rechaza por hash/firma.
+**Probar la revocación:** `generate-keys.js --revoke=<keyId>` → el manifiesto deja de importarse.
 
-> **¿De dónde sacar material legal?** Libros de Texto Gratuitos de la SEP (públicos),
-> y Recursos Educativos Abiertos con licencia Creative Commons (Khan Academy en
-> español, PhET, Wikipedia offline/Kiwix, CK-12). La firma garantiza su procedencia.
+---
 
-### Alternativa: añadir UN archivo suelto
-```powershell
-node scripts/add-content.js --home=nodes/semilla --file="C:/ruta/leccion.pdf" `
-  --escuela="Primaria Juárez" --materia="Matemáticas" --leccion="Fracciones" --mime=application/pdf
-node scripts/build-manifest.js --home=nodes/semilla     # regenera manifest.json firmado
-```
+## Comandos (`npm run …`)
+
+| Comando | Qué hace |
+|---|---|
+| `setup` | Prepara el demo (autoridad + catálogo firmado + dispositivos) |
+| `demo` / `app` | Arranca el nodo central (semilla + UI + broker) |
+| `content` | Importa la carpeta `contenido/` |
+| `keys` | Gestiona autoridades |
+| `manifest` / `import` | Firma / verifica-importa un manifiesto |
+| `pack` / `sync` | Empaqueta para el hub / sincroniza desde el hub |
+| `add` | Firma y agrega un archivo suelto |
+| `seed` / `student` | Nodos CLI (solo P2P entre nodos, sin UI) |
 
 ## Parámetros (CLI `--flag=` o variable `EDU_*`)
 
-| Flag | Env | Defecto | Descripción |
-|------|-----|---------|-------------|
-| `--home=` | `EDU_HOME` | `nodes/default` | Carpeta del dispositivo (DB + caché) |
-| `--name=` | `EDU_NAME` | nombre del home | Nombre visible del nodo |
-| `--discovery-port=` | `EDU_DISCOVERY_PORT` | `41234` | Puerto UDP de descubrimiento |
-| `--broadcast=` | `EDU_BROADCAST` | `255.255.255.255` | Dirección de difusión LAN |
-| `--tcp-port=` | `EDU_TCP_PORT` | `0` (auto) | Puerto TCP de transferencia |
-| `--chunk-size=` | `EDU_CHUNK_SIZE` | `262144` | Tamaño de bloque (bytes) |
-| `--concurrency=` | `EDU_CONCURRENCY` | `4` | Bloques en paralelo |
-| `--web-port=` | `EDU_WEB_PORT` | `8080` | Puerto de la UI web (node-app) |
-| `--hash=` | — | (auto) | (alumno) hash específico a descargar |
+| Flag | Defecto | Descripción |
+|------|---------|-------------|
+| `--home=` | `nodes/default` | Carpeta del dispositivo (DB + caché) |
+| `--name=` | nombre del home | Nombre visible del nodo |
+| `--web-port=` | `8080` | Puerto de la UI web |
+| `--tls` | apagado | Sirve por **HTTPS** (cert autofirmado en `keys/`) |
+| `--teacher-pin=` | aleatorio | PIN del Modo Maestro |
+| `--max-upload-mb=` | `600` | Tamaño máx. al publicar desde el navegador |
+| `--discovery-port=` | `41234` | Puerto UDP de descubrimiento |
+| `--broadcast=` | `255.255.255.255` | Dirección de difusión LAN |
+| `--tcp-port=` | `0` (auto) | Puerto TCP de transferencia |
+| `--chunk-size=` | `262144` | Tamaño de bloque (bytes) |
+| `--concurrency=` | `4` | Bloques en paralelo |
 
-## Solución de problemas
-- **`npm run x -- --flag` no aplica el flag:** usa `node <script> --flag` (ver aviso arriba).
-- **El alumno no encuentra semillas en una PC sin red:** el LOOKUP también va a
-  `127.0.0.1`, así el demo funciona sin adaptador activo. Revisa el firewall.
-- **Firewall de Windows:** permite Node.js en redes privadas la primera vez.
+---
 
-## De MVP a producción
-- **Merkle proofs** por bloque (en vez de lista lineal) para verificar sin bajar toda la lista.
-- **Descubrimiento estándar**: mDNS/DNS-SD o **libp2p** (identidad de nodo, NAT traversal, DHT).
-- **Cifrado del canal** (TLS/Noise) aunque la red sea local.
-- **Re-firma incremental** del manifiesto y *expiración* de llaves además de revocación.
+## Despliegue (notas de campo)
+- **Hardware:** una Raspberry Pi (o cualquier PC/laptop) sirve como nodo central; corre Node sin compilar (gracias a WASM). El ESP32 **no** sirve (no corre Node). El Jetson Nano **viejo** no sirve para IA.
+- **Red:** el límite real es el **WiFi**, no el software. Un hotspot de celular aguanta ~8–10 dispositivos; un **router de verdad**, 30–250. Para más salones → **más puntos de acceso**, un solo nodo central. **Evita WiFi público** (suele bloquear el tráfico entre dispositivos).
+- **Servidor:** **uno por escuela**, no por salón. Como el contenido **persiste** en cada celular, no todos tienen que estar conectados al mismo tiempo.
+
+## Limitaciones honestas / roadmap
+- El mesh está probado en lógica y transporte, **no** con 30–55 dispositivos físicos a la vez → haz un **piloto de 1 salón** antes de escalar.
+- WebRTC entre navegadores requiere que la red permita tráfico entre dispositivos (mDNS, sin "aislamiento de clientes").
+- Para anti-suplantación total, falta **fijar la huella** de la autoridad fuera de banda.
+- Próximos pasos posibles: app de escritorio, analítica de uso anónima, cuestionarios offline, Docker, multi-idioma.
+
+## Licencia
+MIT — libre y gratis. Ver [LICENSE](LICENSE).
