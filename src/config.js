@@ -68,6 +68,20 @@ export const CONCURRENCY = Number(arg('concurrency', 4));
 //  Puerto del servidor HTTP que sirve la app de catálogo navegable.
 export const WEB_PORT = Number(arg('web-port', 8080));
 
+// --- Sincronización automática desde el hub en línea ------------------------
+//  Si se fija --sync-from=URL, el nodo se mantiene al día con el hub SOLO:
+//  baja contenido nuevo (verificando firmas) cada --sync-interval minutos.
+//  Vacío = desactivado (comportamiento clásico, 100% offline en la LAN).
+export const SYNC_FROM = arg('sync-from', '');
+export const SYNC_INTERVAL_MIN = Number(arg('sync-interval', 15));
+
+// --- Administración de carga (cuánto sirve el central en paralelo) -----------
+//  Para que descargar sea "ligero" aun con muchos celulares: el central solo
+//  sirve SERVE_CONCURRENCY bloques a la vez; si la cola pasa de SERVE_QUEUE,
+//  responde 503 (reintentar) y los celulares se apoyan más en sus compañeros.
+export const SERVE_CONCURRENCY = Number(arg('serve-concurrency', 6));
+export const SERVE_QUEUE = Number(arg('serve-queue', 32));
+
 // --- Modo Maestro -----------------------------------------------------------
 //  PIN que protege el tablero del maestro y la publicación de contenido, para
 //  que solo el maestro (no los alumnos) pueda firmar y publicar.

@@ -63,6 +63,41 @@ export async function assembleBlob(hash, totalChunks, mime) {
   return blob;
 }
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Trae UN bloque YA VERIFICADO: primero de compañeros (WebRTC), si no, del nodo
+ * central (HTTP). Si el central va saturado responde 503 → esperamos (Retry-After)
+ * y reintentamos un par de veces; así la carga se reparte y la descarga es ligera.
+ * Lo comparten la descarga completa y la VISTA PREVIA por bloques.
+ * @returns {Promise<{buf:ArrayBuffer, src:'peer'|'central'}>}
+ */
+export async function fetchVerifiedChunk(hash, index, chunkHashes) {
+  await ensureMesh();
+  // 1) Compañeros (mesh WebRTC).
+  const peers = await mesh.lookup(hash, index);
+  for (const pid of peers) {
+    try {
+      const b = await mesh.requestChunk(pid, hash, index);
+      if (b && b.byteLength && (await sha256hex(b)) === chunkHashes[index]) return { buf: b, src: 'peer' };
+    } catch { /* probamos el siguiente compañero */ }
+  }
+  // 2) Respaldo: nodo central por HTTP (respetando el límite de carga).
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const r = await fetch(`/api/chunk?hash=${encodeURIComponent(hash)}&index=${index}`);
+    if (r.status === 503) { // central ocupado: espera y reintenta
+      const wait = (Number(r.headers.get('Retry-After')) || 0) * 1000 || 600;
+      await sleep(wait + Math.random() * 400);
+      continue;
+    }
+    if (!r.ok) throw new Error('http');
+    const b = await r.arrayBuffer();
+    if ((await sha256hex(b)) !== chunkHashes[index]) throw new Error('corrupto');
+    return { buf: b, src: 'central' };
+  }
+  throw new Error('central ocupado');
+}
+
 export async function downloadFile(hash, mime, onProgress) {
   await ensureMesh();
   const info = await fetch(`/api/chunks?hash=${encodeURIComponent(hash)}`).then((r) => r.json());
@@ -84,34 +119,19 @@ export async function downloadFile(hash, mime, onProgress) {
       const i = queue.shift();
       if (i === undefined) break;
       attempts[i] = (attempts[i] || 0) + 1;
-      let buf = null; let src = 'central';
-
-      // 1) Intentar con compañeros (WebRTC).
-      const peers = await mesh.lookup(hash, i);
-      for (const pid of peers) {
-        try { const b = await mesh.requestChunk(pid, hash, i); if (b && b.byteLength) { buf = b; src = 'peer'; break; } } catch { /* siguiente */ }
+      try {
+        // Trae y VERIFICA el bloque (compañeros primero, central como respaldo).
+        const { buf, src } = await fetchVerifiedChunk(hash, i, info.chunkHashes);
+        // Guardar + anunciar (me vuelvo seeder) + reportar avance al tablero.
+        await store.putChunk(hash, i, buf);
+        mesh.announce(hash, i);
+        completed++; stats[src]++;
+        mesh.progress(hash, completed, total);
+        onProgress?.({ type: 'chunk', index: i, src, completed, total, stats });
+      } catch (e) {
+        if (attempts[i] < 6) { queue.push(i); continue; } // reintenta (incluye 503 del central)
+        throw new Error(`no se pudo descargar el bloque ${i}: ${e.message}`);
       }
-      // 2) Respaldo: nodo central por HTTP.
-      if (!buf) {
-        try {
-          buf = await fetch(`/api/chunk?hash=${encodeURIComponent(hash)}&index=${i}`).then((r) => { if (!r.ok) throw new Error('http'); return r.arrayBuffer(); });
-          src = 'central';
-        } catch {
-          if (attempts[i] < 5) { queue.push(i); continue; }
-          throw new Error(`no se pudo descargar el bloque ${i}`);
-        }
-      }
-      // 3) Verificación por bloque.
-      if (await sha256hex(buf) !== info.chunkHashes[i]) {
-        if (attempts[i] < 5) { queue.push(i); continue; }
-        throw new Error(`bloque ${i} corrupto`);
-      }
-      // 4) Guardar + anunciar (me vuelvo seeder) + reportar avance al tablero.
-      await store.putChunk(hash, i, buf);
-      mesh.announce(hash, i);
-      completed++; stats[src]++;
-      mesh.progress(hash, completed, total);
-      onProgress?.({ type: 'chunk', index: i, src, completed, total, stats });
     }
   }
 

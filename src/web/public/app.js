@@ -9,6 +9,7 @@
 import { mesh, ensureMesh, downloadFile, localAvailability, announceLocal, assembleBlob } from './download.js';
 import { initMaestro } from './maestro.js';
 import { verifyFileRecord } from './verify-sig.js';
+import { openPreview } from './preview.js';
 
 const state = { tree: [], node: null, selected: null, avail: {}, verified: {}, authIdx: {} };
 
@@ -48,6 +49,48 @@ function initPeersChip() {
   peersEl.innerHTML = `${icon('i-wifi')} <span id="peerCount">malla: 0</span>`;
   $('.appbar-right').prepend(peersEl);
   mesh.onPeers = (n) => { const c = $('#peerCount'); if (c) c.textContent = `malla: ${n}`; };
+}
+
+// ---------- Indicador de sincronización automática (con el hub) ----------
+//  Muestra el estado del hub y, además, detecta contenido nuevo (catalogVersion)
+//  para refrescar el catálogo solo —tanto si llegó por sync como si el maestro
+//  publicó algo desde otro dispositivo.
+let lastCatalogVersion = null;
+function timeAgo(iso) {
+  const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+  if (s < 60) return 'recién';
+  const m = Math.floor(s / 60);
+  return m < 60 ? `hace ${m} min` : `hace ${Math.floor(m / 60)} h`;
+}
+function initSyncStatus() {
+  const chip = document.createElement('span');
+  chip.className = 'node-chip sync-chip';
+  chip.hidden = true;
+  chip.innerHTML = `${icon('i-refresh')} <span id="syncText">sync</span>`;
+  $('.appbar-right').prepend(chip);
+  const text = chip.querySelector('#syncText');
+
+  const poll = async () => {
+    let s;
+    try { s = await fetch('/api/sync/status').then((r) => r.json()); } catch { return; }
+    // Refresca el catálogo si cambió la versión (sync nuevo o publicación remota).
+    if (lastCatalogVersion === null) lastCatalogVersion = s.catalogVersion;
+    else if (s.catalogVersion !== lastCatalogVersion) {
+      lastCatalogVersion = s.catalogVersion;
+      reloadCatalog().catch(() => {});
+    }
+    if (!s.enabled) { chip.hidden = true; return; }
+    chip.hidden = false;
+    chip.classList.toggle('spin', !!s.running);
+    if (s.running) text.textContent = 'sincronizando…';
+    else if (s.error) text.textContent = 'sync: error';
+    else text.textContent = s.lastSyncAt ? `sync ${timeAgo(s.lastSyncAt)}` : 'sync activo';
+    chip.title = s.error
+      ? `Última sincronización falló: ${s.error}`
+      : `Sincroniza automáticamente con ${s.from} (cada ${s.intervalMin} min)`;
+  };
+  poll();
+  setInterval(poll, 15000);
 }
 
 // ---------- Carga ----------
@@ -156,6 +199,8 @@ function renderContent() {
 
   root.querySelectorAll('[data-action="download"]').forEach((b) => b.addEventListener('click', () => startDownload(b.dataset.hash)));
   root.querySelectorAll('[data-action="open"]').forEach((b) => b.addEventListener('click', () => openFile(b.dataset.hash)));
+  root.querySelectorAll('[data-action="preview"]').forEach((b) => b.addEventListener('click', () =>
+    openPreview(findFile(b.dataset.hash), { onDownload: () => startDownload(b.dataset.hash) })));
 }
 
 function badgeHtml(file) {
@@ -172,10 +217,14 @@ function actionHtml(file) {
   if (!state.verified[file.hash]) {
     return `<span class="trust bad">${icon('i-alert')} Bloqueado por seguridad: firma no válida</span>`;
   }
+  // "Vista previa" (ver por bloques, sin descargar todo) disponible siempre.
+  const preview = `<button class="btn ghost" type="button" data-action="preview" data-hash="${file.hash}">${icon('i-eye')} Vista previa</button>`;
   return state.avail[file.hash]
     ? `<button class="btn primary" type="button" data-action="open" data-hash="${file.hash}">${icon('i-file')} Abrir PDF</button>
+       ${preview}
        <span class="seed-chip" title="Compartiendo con tus compañeros">${icon('i-wifi')} Compartiendo</span>`
-    : `<button class="btn primary" type="button" data-action="download" data-hash="${file.hash}">${icon('i-download')} Descargar de la red</button>`;
+    : `<button class="btn primary" type="button" data-action="download" data-hash="${file.hash}">${icon('i-download')} Descargar de la red</button>
+       ${preview}`;
 }
 function cardHtml(file) {
   return `
@@ -259,6 +308,7 @@ function showError(prog, message) {
 
 initTheme();
 initPeersChip();
+initSyncStatus();
 initMaestro();
 window.addEventListener('catalog-changed', () => reloadCatalog().catch(() => {}));
 load().catch((err) => { $('#content').innerHTML = `<p class="muted">Error al cargar: ${esc(err.message)}</p>`; });

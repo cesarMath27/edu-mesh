@@ -10,7 +10,13 @@
 //    GET /api/node              -> { name, authorities[] }
 //    GET /api/catalog           -> árbol escuelas→materias→lecciones→archivos + estado
 //    GET /api/download?hash=…    -> (SSE) dispara descarga robusta y emite progreso
-//    GET /api/file?hash=…        -> sirve el PDF cacheado (inline, para abrir/ver)
+//    GET /api/file?hash=…        -> sirve el archivo cacheado (inline, con Range)
+//    GET /api/stream?hash=…      -> VISTA PREVIA por streaming (HTTP Range: solo
+//                                   los bytes/bloques que el visor pide → ligero)
+//    GET /api/chunks?hash=…      -> lista de hashes de bloque (descarga navegador)
+//    GET /api/chunk?hash=&index= -> UN bloque (con límite de carga: 503 si saturado)
+//    GET /api/sync/status        -> estado de la sincronización automática + versión
+//    POST /api/sync/now          -> (maestro) fuerza una sincronización ya
 // =============================================================================
 
 import http from 'node:http';
@@ -27,8 +33,9 @@ import { computeChunkHashes } from '../crypto/chunking.js';
 import { hashFile } from '../crypto/hashing.js';
 import { buildManifest } from '../catalog/manifest.js';
 import { stableStringify } from '../util/stable-json.js';
+import { createLimiter } from '../util/limiter.js';
 import { randomBytes, createHash, timingSafeEqual } from 'node:crypto';
-import { WEB_PORT, TEACHER_PIN, CHUNK_SIZE, ROOT, MAX_UPLOAD_MB, TLS } from '../config.js';
+import { WEB_PORT, TEACHER_PIN, CHUNK_SIZE, ROOT, MAX_UPLOAD_MB, TLS, SERVE_CONCURRENCY, SERVE_QUEUE } from '../config.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -105,6 +112,53 @@ function serveStatic(res, urlPath) {
 }
 
 /**
+ * Sirve un archivo del disco SOPORTANDO HTTP Range (descarga parcial).
+ * Es la pieza clave de la "vista previa por bloques": el visor del navegador
+ * (PDF nativo, <video>, <audio>) pide solo los rangos que necesita ver, así que
+ * NO hace falta descargar el archivo completo → reproducción/lectura ultra ligera.
+ */
+function serveFile(req, res, filePath, mime, name) {
+  const size = fs.statSync(filePath).size;
+  const safeName = (name || 'archivo').replace(/[^\w.\- ]+/g, '_');
+  const headers = {
+    'Content-Type': mime || 'application/octet-stream',
+    'Content-Disposition': `inline; filename="${safeName}"`,
+    'Accept-Ranges': 'bytes',
+    'Cache-Control': 'public, max-age=86400',
+  };
+
+  if (req.method === 'HEAD') {
+    res.writeHead(200, { ...headers, 'Content-Length': size });
+    return res.end();
+  }
+
+  const range = req.headers.range;
+  const m = range && /^bytes=(\d*)-(\d*)$/.exec(range.trim());
+  if (m) {
+    let start = m[1] === '' ? null : Number(m[1]);
+    let end = m[2] === '' ? null : Number(m[2]);
+    if (start === null) {                       // sufijo "bytes=-N" → últimos N bytes
+      start = Math.max(0, size - (end || 0)); end = size - 1;
+    } else if (end === null || end >= size) {   // "bytes=start-" o fin fuera de rango
+      end = size - 1;
+    }
+    if (Number.isNaN(start) || Number.isNaN(end) || start > end || start >= size) {
+      res.writeHead(416, { 'Content-Range': `bytes */${size}` });
+      return res.end();
+    }
+    res.writeHead(206, { ...headers, 'Content-Range': `bytes ${start}-${end}/${size}`, 'Content-Length': end - start + 1 });
+    const s = fs.createReadStream(filePath, { start, end });
+    res.on('close', () => s.destroy());
+    return s.pipe(res);
+  }
+
+  res.writeHead(200, { ...headers, 'Content-Length': size });
+  const s = fs.createReadStream(filePath);
+  res.on('close', () => s.destroy());
+  return s.pipe(res);
+}
+
+/**
  * Arranca el servidor web.
  * @param {object} p
  * @param {object} p.cat        DAO de openCatalog().
@@ -112,9 +166,16 @@ function serveStatic(res, urlPath) {
  * @param {string} p.nodeName
  * @param {Function} [p.log]
  */
-export async function startWebServer({ cat, cacheDir, nodeName, getChunkInfo, resolveHashToFile, log }) {
+export async function startWebServer({
+  cat, cacheDir, nodeName, getChunkInfo, resolveHashToFile, log,
+  getSyncStatus, runSyncNow, getCatalogVersion, onCatalogChanged,
+}) {
   const activeDownloads = new Set(); // evita descargas duplicadas del mismo hash
   let brokerState = () => [];         // lo fija attachSignaling tras escuchar
+
+  // Limitador de carga: el central solo sirve N bloques a la vez (resto en cola;
+  // si la cola se llena, responde 503 y los celulares se apoyan en sus compañeros).
+  const chunkLimiter = createLimiter({ concurrency: SERVE_CONCURRENCY, maxQueue: SERVE_QUEUE });
 
   // --- Autenticación del maestro: PIN -> token de sesión (el PIN NUNCA va en la URL) ---
   const tokens = new Map();                 // token -> expira (ms)
@@ -196,8 +257,11 @@ export async function startWebServer({ cat, cacheDir, nodeName, getChunkInfo, re
       return;
     }
 
-    // ---- API: servir el archivo cacheado (inline, para abrir el PDF) ----
-    if (route === '/api/file') {
+    // ---- API: servir el archivo cacheado (inline, con Range) ----
+    //  /api/file  = abrir el archivo completo (compatibilidad).
+    //  /api/stream = VISTA PREVIA por streaming: el visor pide rangos y solo se
+    //                cargan los bloques que se ven (sin descargar todo).
+    if (route === '/api/file' || route === '/api/stream') {
       const hash = url.searchParams.get('hash');
       const row = hash && cat.findArchivoByHash(hash);
       const full = row && path.join(cacheDir, hash);
@@ -205,13 +269,7 @@ export async function startWebServer({ cat, cacheDir, nodeName, getChunkInfo, re
         res.writeHead(404, { 'Content-Type': 'text/plain' });
         return res.end('Archivo no disponible en este dispositivo');
       }
-      const safeName = (row.nombre || 'archivo').replace(/[^\w.\- ]+/g, '_');
-      res.writeHead(200, {
-        'Content-Type': row.mime || 'application/octet-stream',
-        'Content-Disposition': `inline; filename="${safeName}"`,
-        'Content-Length': fs.statSync(full).size,
-      });
-      return fs.createReadStream(full).pipe(res);
+      return serveFile(req, res, full, row.mime, row.nombre);
     }
 
     // ---- API: lista de bloques (para la descarga en el navegador) ----
@@ -223,6 +281,8 @@ export async function startWebServer({ cat, cacheDir, nodeName, getChunkInfo, re
     }
 
     // ---- API: UN bloque por HTTP (origen / respaldo del mesh) ----
+    //  Pasa por el limitador de carga: si el central está saturado responde 503
+    //  (Retry-After) y el celular reintenta o se apoya en sus compañeros (mesh).
     if (route === '/api/chunk') {
       const hash = url.searchParams.get('hash');
       const i = Number(url.searchParams.get('index'));
@@ -232,8 +292,25 @@ export async function startWebServer({ cat, cacheDir, nodeName, getChunkInfo, re
       const start = i * info.chunkSize;
       if (start >= info.size) { res.writeHead(416); return res.end(); }
       const end = Math.min(start + info.chunkSize, info.size); // exclusivo
-      res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': end - start });
-      return fs.createReadStream(file, { start, end: end - 1 }).pipe(res);
+      try {
+        await chunkLimiter.runOrBusy(() => new Promise((resolve, reject) => {
+          res.writeHead(200, {
+            'Content-Type': 'application/octet-stream',
+            'Content-Length': end - start,
+            'X-Edu-Load': `${chunkLimiter.stats().active}/${SERVE_CONCURRENCY}`,
+          });
+          const s = fs.createReadStream(file, { start, end: end - 1 });
+          s.on('error', reject);
+          s.on('end', resolve);
+          res.on('close', () => { s.destroy(); resolve(); });
+          s.pipe(res);
+        }));
+      } catch (e) {
+        if (e && e.busy) { res.writeHead(503, { 'Retry-After': '1' }); return res.end('ocupado'); }
+        if (!res.headersSent) res.writeHead(500);
+        return res.end();
+      }
+      return;
     }
 
     // ---- API Maestro: login (PIN -> token). Comparación en tiempo constante. ----
@@ -324,6 +401,7 @@ export async function startWebServer({ cat, cacheDir, nodeName, getChunkInfo, re
           fs.writeFileSync(path.join(ROOT, 'manifest.json'),
             JSON.stringify(buildManifest(cat.exportTree(), signingKeyId), null, 2));
 
+          onCatalogChanged?.(); // sube la versión del catálogo → las apps se refrescan solas
           log?.(`📤 Maestro publicó "${nombre}" (${info.size} B) en ${materia} / ${leccion}`);
           sendJson(res, 200, { ok: true, hash: contentHash, nombre, size: info.size });
         } catch (err) {
@@ -332,6 +410,22 @@ export async function startWebServer({ cat, cacheDir, nodeName, getChunkInfo, re
         }
       });
       return;
+    }
+
+    // ---- API: estado de la sincronización automática (público, de solo lectura) ----
+    //  Incluye catalogVersion para que la app detecte contenido nuevo y se refresque
+    //  sola (tanto si llegó por sincronización como si el maestro publicó algo).
+    if (route === '/api/sync/status') {
+      const s = getSyncStatus ? getSyncStatus() : { enabled: false };
+      return sendJson(res, 200, { ...s, catalogVersion: getCatalogVersion ? getCatalogVersion() : 0 });
+    }
+
+    // ---- API Maestro: forzar una sincronización ahora ----
+    if (route === '/api/sync/now' && req.method === 'POST') {
+      if (!isTeacher(req)) return sendJson(res, 401, { error: 'No autorizado' });
+      if (!runSyncNow) return sendJson(res, 400, { error: 'La sincronización automática no está activada en este nodo (usa --sync-from=URL).' });
+      runSyncNow(); // dispara en segundo plano; el cliente sigue el avance con /api/sync/status
+      return sendJson(res, 200, { ok: true, status: getSyncStatus ? getSyncStatus() : null });
     }
 
     // ---- Estáticos ----

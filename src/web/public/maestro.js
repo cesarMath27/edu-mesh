@@ -59,7 +59,10 @@ function render(panel, data, close) {
   panel.innerHTML = `
     <div class="maestro-head">
       <h2>${icon('i-board')} Modo Maestro</h2>
-      <button class="btn ghost" id="maestroBack" type="button">Volver al catálogo</button>
+      <div class="maestro-head-actions">
+        <button class="btn ghost" id="maestroSync" type="button">${icon('i-refresh')} Sincronizar ahora</button>
+        <button class="btn ghost" id="maestroBack" type="button">Volver al catálogo</button>
+      </div>
     </div>
 
     <div class="maestro-grid">
@@ -85,7 +88,25 @@ function render(panel, data, close) {
 
   panel.querySelector('#maestroBack').addEventListener('click', close);
   panel.querySelector('#upBtn').addEventListener('click', () => publish(panel));
+  panel.querySelector('#maestroSync').addEventListener('click', () => syncNow(panel));
   renderDashboard(panel.querySelector('#dashWrap'), data);
+}
+
+// Fuerza una sincronización con el hub ahora mismo (el avance se ve en el chip "sync").
+async function syncNow(panel) {
+  const btn = panel.querySelector('#maestroSync');
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/sync/now', { method: 'POST', headers: { Authorization: 'Bearer ' + token() } });
+    const j = await r.json().catch(() => ({}));
+    if (r.status === 401) { sessionStorage.removeItem('edu-token'); alert('Sesión expirada. Vuelve a entrar con el PIN.'); }
+    else if (!r.ok) alert(j.error || 'No se pudo sincronizar.');
+    else alert('Sincronización iniciada. El catálogo se actualizará solo cuando llegue contenido nuevo.');
+  } catch (e) {
+    alert(e.message);
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 async function publish(panel) {
