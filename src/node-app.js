@@ -21,8 +21,9 @@ import { openCatalog } from './db/catalog.js';
 import { startFileServer } from './p2p/server.js';
 import { startDiscoveryResponder } from './p2p/discovery.js';
 import { startWebServer } from './web/server.js';
+import { startAutoSync } from './sync/auto-sync.js';
 import { getOrBuildChunkInfo } from './crypto/chunking.js';
-import { DB_PATH, CACHE_DIR, NODE_NAME, CHUNK_SIZE, WEB_PORT, TEACHER_PIN, TEACHER_PIN_IS_GENERATED, TLS } from './config.js';
+import { DB_PATH, CACHE_DIR, HOME, NODE_NAME, CHUNK_SIZE, WEB_PORT, TEACHER_PIN, TEACHER_PIN_IS_GENERATED, TLS, SYNC_FROM, SYNC_INTERVAL_MIN } from './config.js';
 import { makeLogger } from './util/log.js';
 import { lanAddresses, bestLan } from './util/netinfo.js';
 import qrcode from 'qrcode-terminal';
@@ -35,11 +36,6 @@ const hasHash = (hash) => fs.existsSync(cacheFile(hash));
 fs.mkdirSync(CACHE_DIR, { recursive: true });
 const cat = openCatalog(DB_PATH);
 
-// Sincroniza estados con la caché real.
-for (const a of cat.listArchivos()) {
-  cat.setEstado(a.content_hash, hasHash(a.content_hash) ? 'disponible' : 'pendiente');
-}
-
 /** Info de bloques de un hash (chunk_size según el catálogo). */
 async function getChunkInfo(hash) {
   if (!hasHash(hash)) return null;
@@ -47,8 +43,19 @@ async function getChunkInfo(hash) {
   return getOrBuildChunkInfo(cacheFile(hash), row?.chunk_size || CHUNK_SIZE);
 }
 
-// Pre-calcula sidecars de lo que ya tenemos (para sembrar al instante).
-await Promise.all(cat.listArchivos().filter((a) => hasHash(a.content_hash)).map((a) => getChunkInfo(a.content_hash)));
+// Versión del catálogo: sube cuando llega contenido nuevo (por sincronización o
+// por publicación del maestro) → las apps de los alumnos se refrescan solas.
+let catalogVersion = 1;
+const bumpCatalog = () => { catalogVersion++; };
+
+/** Pone los estados al día con la caché real y pre-calcula sidecars (sembrar ya). */
+async function refreshLocalContent() {
+  for (const a of cat.listArchivos()) {
+    cat.setEstado(a.content_hash, hasHash(a.content_hash) ? 'disponible' : 'pendiente');
+  }
+  await Promise.all(cat.listArchivos().filter((a) => hasHash(a.content_hash)).map((a) => getChunkInfo(a.content_hash)));
+}
+await refreshLocalContent();
 
 const resolveHashToFile = (h) => (hasHash(h) ? cacheFile(h) : null);
 
@@ -56,10 +63,25 @@ const resolveHashToFile = (h) => (hasHash(h) ? cacheFile(h) : null);
 const { port } = await startFileServer({ resolveHashToFile, getChunkInfo, log });
 startDiscoveryResponder({ hasHash, getTcpPort: () => port, nodeName: NODE_NAME, log });
 
+// 1.5) Sincronización automática desde el hub (opcional, --sync-from=URL).
+//      Baja contenido nuevo (verificando firmas) cada --sync-interval minutos.
+let autoSync = null;
+if (SYNC_FROM) {
+  autoSync = startAutoSync({
+    from: SYNC_FROM, intervalMs: SYNC_INTERVAL_MIN * 60000,
+    cat, cacheDir: CACHE_DIR, home: HOME, log,
+    onChange: () => { refreshLocalContent().catch(() => {}); bumpCatalog(); },
+  });
+}
+
 // 2) Servidor de UI web local + broker de señalización WebRTC (mesh de navegadores).
 //    (startWebServer arranca también el broker y el tablero del maestro.)
 await startWebServer({
   cat, cacheDir: CACHE_DIR, nodeName: NODE_NAME, getChunkInfo, resolveHashToFile, log,
+  getSyncStatus: () => (autoSync ? autoSync.getStatus() : { enabled: false }),
+  runSyncNow: autoSync ? autoSync.runNow : null,
+  getCatalogVersion: () => catalogVersion,
+  onCatalogChanged: bumpCatalog,
 });
 
 // Banner de conexión: URL en este equipo, IPs para los celulares y un QR.
