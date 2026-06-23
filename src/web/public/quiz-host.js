@@ -22,16 +22,20 @@ let draft = null;
 const blankQuestion = () => ({ q: '', options: ['', '', '', ''], correct: 0, time: 20 });
 const ensureDraft = () => { if (!draft) draft = { title: '', questions: [blankQuestion()] }; return draft; };
 
-async function api(path, body) {
+// Las acciones de control (siguiente/revelar/cancelar…) son POST aunque no
+// lleven cuerpo: por eso el método es EXPLÍCITO (un GET daría 405 en el servidor).
+async function req(path, method, body) {
   const r = await fetch(path, {
-    method: body === undefined ? 'GET' : 'POST',
+    method,
     headers: { Authorization: 'Bearer ' + token(), ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}) },
-    body: body === undefined ? undefined : JSON.stringify(body),
+    body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j.error || `error ${r.status}`);
   return j;
 }
+const get = (path) => req(path, 'GET');
+const post = (path, body) => req(path, 'POST', body);
 
 export function initQuizHost(container) {
   let poll = null;
@@ -43,7 +47,7 @@ export function initQuizHost(container) {
     stopPoll();
     poll = setInterval(async () => {
       let st;
-      try { st = await api('/api/quiz/state'); } catch { stopPoll(); return; }
+      try { st = await get('/api/quiz/state'); } catch { stopPoll(); return; }
       if (st.state === 'idle') { stopPoll(); setHosting(false); lastKey = null; renderEditor(); return; }
       const key = `${st.state}:${st.current}`;
       if (key !== lastKey) {
@@ -75,13 +79,13 @@ export function initQuizHost(container) {
     if (savedList.some((q) => q.id === cur)) sel.value = cur;
   }
   async function refreshSaved() {
-    try { savedList = (await api('/api/quiz/saved')).quizzes || []; fillLoadSelect(); } catch { /* sesión caída */ }
+    try { savedList = (await get('/api/quiz/saved')).quizzes || []; fillLoadSelect(); } catch { /* sesión caída */ }
   }
   async function doSave() {
     const status = container.querySelector('#qhStatus');
     try {
       status.textContent = 'Guardando…';
-      const r = await api('/api/quiz/save', { id: draft.id, title: draft.title, questions: draft.questions });
+      const r = await post('/api/quiz/save', { id: draft.id, title: draft.title, questions: draft.questions });
       draft.id = r.id;
       status.textContent = `✓ Guardado "${r.title}".`;
       await refreshSaved();
@@ -89,12 +93,12 @@ export function initQuizHost(container) {
   }
   async function doLoad(id) {
     if (!id) return;
-    try { const q = await api('/api/quiz/load?id=' + encodeURIComponent(id)); draft = { id: q.id, title: q.title, questions: q.questions }; renderEditor(); }
+    try { const q = await get('/api/quiz/load?id=' + encodeURIComponent(id)); draft = { id: q.id, title: q.title, questions: q.questions }; renderEditor(); }
     catch (e) { const s = container.querySelector('#qhStatus'); if (s) s.textContent = '✗ ' + e.message; }
   }
   async function doDelete(id) {
     if (!id) return;
-    try { await api('/api/quiz/delete', { id }); if (draft && draft.id === id) draft.id = undefined; await refreshSaved(); }
+    try { await post('/api/quiz/delete', { id }); if (draft && draft.id === id) draft.id = undefined; await refreshSaved(); }
     catch { /* ignore */ }
   }
 
@@ -183,7 +187,7 @@ export function initQuizHost(container) {
     try {
       status.textContent = 'Lanzando partida…';
       unlock();
-      await api('/api/quiz/start', { title: draft.title, questions: draft.questions });
+      await post('/api/quiz/start', { title: draft.title, questions: draft.questions });
       setHosting(true);
       lastKey = null;
       startPoll();
@@ -227,10 +231,10 @@ export function initQuizHost(container) {
       </div>`;
 
     bindMute();
-    container.querySelector('#cNext')?.addEventListener('click', () => { unlock(); api('/api/quiz/next').catch(() => {}); });
-    container.querySelector('#cReveal')?.addEventListener('click', () => api('/api/quiz/reveal').catch(() => {}));
-    container.querySelector('#cCancel')?.addEventListener('click', async () => { await api('/api/quiz/cancel').catch(() => {}); setHosting(false); stopPoll(); lastKey = null; renderEditor(); });
-    container.querySelector('#cNew')?.addEventListener('click', async () => { await api('/api/quiz/cancel').catch(() => {}); setHosting(false); stopPoll(); lastKey = null; renderEditor(); });
+    container.querySelector('#cNext')?.addEventListener('click', () => { unlock(); post('/api/quiz/next').catch(() => {}); });
+    container.querySelector('#cReveal')?.addEventListener('click', () => post('/api/quiz/reveal').catch(() => {}));
+    container.querySelector('#cCancel')?.addEventListener('click', async () => { await post('/api/quiz/cancel').catch(() => {}); setHosting(false); stopPoll(); lastKey = null; renderEditor(); });
+    container.querySelector('#cNew')?.addEventListener('click', async () => { await post('/api/quiz/cancel').catch(() => {}); setHosting(false); stopPoll(); lastKey = null; renderEditor(); });
   }
 
   function scoreboard(list, medals = false) {
@@ -240,7 +244,7 @@ export function initQuizHost(container) {
   }
 
   // Arranque: si ya hay una partida en curso (reabrir el panel), retoma el control.
-  api('/api/quiz/state')
+  get('/api/quiz/state')
     .then((st) => { if (st.state && st.state !== 'idle') { setHosting(true); lastKey = `${st.state}:${st.current}`; renderControl(st); startPoll(); } else renderEditor(); })
     .catch(() => renderEditor());
 
