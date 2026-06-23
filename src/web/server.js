@@ -201,7 +201,7 @@ function serveFile(req, res, filePath, mime, name) {
  */
 export async function startWebServer({
   cat, cacheDir, nodeName, getChunkInfo, resolveHashToFile, log,
-  getSyncStatus, runSyncNow, getCatalogVersion, onCatalogChanged,
+  getSyncStatus, runSyncNow, getCatalogVersion, onCatalogChanged, quizStore,
 }) {
   const activeDownloads = new Set(); // evita descargas duplicadas del mismo hash
   let brokerState = () => [];         // lo fija attachSignaling tras escuchar
@@ -467,14 +467,40 @@ export async function startWebServer({
     //  por WebSocket. Todas las rutas requieren sesión de maestro.
     if (route.startsWith('/api/quiz/')) {
       if (!isTeacher(req)) return sendJson(res, 401, { error: 'No autorizado' });
-      if (!quizGame) return sendJson(res, 503, { error: 'El broker aún no está listo.' });
-      if (route === '/api/quiz/state') return sendJson(res, 200, quizGame.hostState());
+
+      // -- Guardar / cargar (no necesitan partida activa) --
+      if (route === '/api/quiz/saved' && req.method === 'GET') {
+        return sendJson(res, 200, { quizzes: quizStore ? quizStore.list() : [] });
+      }
+      if (route === '/api/quiz/load' && req.method === 'GET') {
+        const q = quizStore && quizStore.load(url.searchParams.get('id'));
+        if (!q) return sendJson(res, 404, { error: 'Cuestionario no encontrado' });
+        return sendJson(res, 200, q);
+      }
+      // -- Estado de la partida en vivo --
+      if (route === '/api/quiz/state') {
+        if (!quizGame) return sendJson(res, 503, { error: 'El broker aún no está listo.' });
+        return sendJson(res, 200, quizGame.hostState());
+      }
       if (req.method !== 'POST') return sendJson(res, 405, { error: 'Método no permitido' });
 
       let payload = {};
       try { const b = await readBody(req); payload = b ? JSON.parse(b) : {}; }
       catch { return sendJson(res, 400, { error: 'Cuerpo inválido' }); }
 
+      if (route === '/api/quiz/save') {
+        const v = validateQuiz(payload);
+        if (v.error) return sendJson(res, 400, { error: v.error });
+        if (!quizStore) return sendJson(res, 500, { error: 'Este nodo no guarda cuestionarios.' });
+        return sendJson(res, 200, quizStore.save({ id: payload.id, ...v.game }));
+      }
+      if (route === '/api/quiz/delete') {
+        if (quizStore) quizStore.remove(payload.id);
+        return sendJson(res, 200, { ok: true });
+      }
+
+      // -- Control de la partida en vivo (requiere broker) --
+      if (!quizGame) return sendJson(res, 503, { error: 'El broker aún no está listo.' });
       if (route === '/api/quiz/start') {
         const v = validateQuiz(payload);
         if (v.error) return sendJson(res, 400, { error: v.error });

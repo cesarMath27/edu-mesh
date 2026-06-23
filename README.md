@@ -67,7 +67,7 @@ contenido viaja firmado criptográficamente, así cada dispositivo verifica que 
 | Administración de carga | semáforo de concurrencia (`503` al saturar) | [util/limiter.js](src/util/limiter.js) |
 | UI + API + SSE | `http`/`https` nativo | [web/server.js](src/web/server.js), [web/public/](src/web/public/) |
 | Mesh navegador | WebRTC + WebSocket (broker) | [signaling.js](src/web/signaling.js), [public/mesh.js](src/web/public/mesh.js) |
-| Cuestionario en vivo | juego en tiempo real sobre el broker WS | [quiz.js](src/web/quiz.js), [public/quiz-host.js](src/web/public/quiz-host.js), [public/quiz-player.js](src/web/public/quiz-player.js) |
+| Cuestionario en vivo | juego en tiempo real sobre el broker WS | [quiz.js](src/web/quiz.js), [quiz-store.js](src/web/quiz-store.js) (guardar/cargar), [public/quiz-host.js](src/web/public/quiz-host.js), [public/quiz-player.js](src/web/public/quiz-player.js), [public/sfx.js](src/web/public/sfx.js) · [confetti.js](src/web/public/confetti.js) |
 | Verificación en navegador | TweetNaCl (Ed25519) + SHA-256 JS | [verify-sig.js](src/web/public/verify-sig.js), [sha256.js](src/web/public/sha256.js) |
 | Hub en línea | empaquetar + sincronizar | [build-pack.js](scripts/build-pack.js), [sync.js](scripts/sync.js), [docs/](docs/) |
 
@@ -98,9 +98,9 @@ edu-mesh/
     ├── sync/   sync-core.js (una pasada) · auto-sync.js (programador periódico)
     ├── db/     schema.sql · catalog.js
     ├── p2p/    discovery.js · server.js · client.js · download-manager.js
-    └── web/    server.js · signaling.js · quiz.js · tls.js · public/{index.html, app.js, mesh.js,
-                 download.js, store.js, preview.js, quiz-host.js, quiz-player.js, maestro.js,
-                 verify-sig.js, sha256.js, styles.css, vendor/}
+    └── web/    server.js · signaling.js · quiz.js · quiz-store.js · tls.js · public/{index.html,
+                 app.js, mesh.js, download.js, store.js, preview.js, quiz-host.js, quiz-player.js,
+                 sfx.js, confetti.js, maestro.js, verify-sig.js, sha256.js, styles.css, vendor/}
 ```
 
 > No se versionan: `node_modules/`, `nodes/` (datos por dispositivo), `keys/` (llaves),
@@ -156,14 +156,17 @@ node src/node-app.js --home=nodes/semilla --name=Central --teacher-pin=1234
 ### Cuestionario en vivo (estilo Kahoot)
 En **Modo Maestro → "Cuestionario en vivo"**:
 1. Escribe un título y tus preguntas (2–4 opciones, marca la correcta, elige los segundos).
+   Con **Guardar / Cargar** reutilizas cuestionarios (se guardan en el nodo, en `HOME/quizzes`).
 2. **Lanzar partida** → en cada celular aparece solo la pantalla del juego.
 3. **Empezar** muestra la 1ª pregunta; los alumnos tocan una ficha de color. Ganan **más
    puntos por responder rápido** (con bono por racha de aciertos).
 4. **Mostrar respuesta** revela la correcta + el marcador; **Siguiente** avanza; al final, **podio**.
 
-Funciona 100% offline sobre el mismo broker WebSocket del mesh (no necesita internet). El
-maestro controla la partida por HTTP autenticado; los alumnos juegan por WebSocket. Las
-partidas son **efímeras** (no se guardan): pensadas para repasar en clase.
+Incluye **sonido** (efectos sintetizados con Web Audio, sin archivos), **animaciones** y
+**confeti** en el podio (hay botón de silencio 🔊/🔇 y respeta "movimiento reducido").
+Funciona 100% offline sobre el mismo broker WebSocket del mesh. El maestro controla la
+partida por HTTP autenticado; los alumnos juegan por WebSocket. Los **resultados** de cada
+partida son efímeros (no se guardan); las **preguntas** sí, con Guardar / Cargar.
 
 ---
 

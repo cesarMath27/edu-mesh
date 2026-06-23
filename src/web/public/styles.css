@@ -408,8 +408,38 @@ body.modal-open { overflow: hidden; }
 .qh-scores li { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; border-bottom: 1px solid var(--border); }
 @media (max-width: 520px) { .qh-live-opts { grid-template-columns: 1fr; } }
 
+/* --- Botón de silencio --- */
+.quiz-mute { position: absolute; top: 14px; right: 16px; width: 42px; height: 42px; border-radius: 50%; border: 0; cursor: pointer; font-size: 20px; background: rgba(255, 255, 255, .18); color: #fff; z-index: 130; }
+.quiz-mute.dark { position: static; width: 38px; height: 38px; background: var(--surface-2); border: 1px solid var(--border); }
+
+/* --- Barra guardar / cargar --- */
+.qh-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.qh-bar #qhLoad { flex: 1 1 180px; min-width: 140px; }
+
+/* --- Animaciones del cuestionario --- */
+.quiz-pop { animation: quizPop .32s cubic-bezier(.2, .8, .3, 1.2) both; }
+@keyframes quizPop { from { transform: scale(.8); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+.quiz-tile { animation: tileIn .35s ease both; animation-delay: var(--d, 0ms); }
+@keyframes tileIn { from { transform: translateY(14px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+.quiz-tile.correct { animation: tilePulse .5s ease 2; }
+@keyframes tilePulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.04); } }
+.quiz-tile.wrong { animation: tileShake .4s ease; }
+@keyframes tileShake { 0%, 100% { transform: translateX(0); } 20% { transform: translateX(-6px); } 40% { transform: translateX(6px); } 60% { transform: translateX(-4px); } 80% { transform: translateX(4px); } }
+.quiz-timerbar-fill.low { background: #ff5252; }
+.quiz-pod { animation: podRise .5s cubic-bezier(.2, .8, .3, 1.1) both; }
+.quiz-pod-0 { animation-delay: .25s; } .quiz-pod-1 { animation-delay: .1s; } .quiz-pod-2 { animation-delay: 0s; }
+@keyframes podRise { from { transform: translateY(40px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+.quiz-medal { animation: medalBounce .6s ease 1; }
+@keyframes medalBounce { 0% { transform: translateY(0); } 30% { transform: translateY(-10px); } 60% { transform: translateY(0); } 80% { transform: translateY(-4px); } 100% { transform: translateY(0); } }
+
+/* --- Confeti --- */
+.quiz-host { position: relative; }
+.quiz-confetti { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 5; }
+.quiz-overlay .quiz-confetti { z-index: 110; }
+
 /* ---------- Accesibilidad: movimiento reducido ---------- */
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }
   .sync-chip.spin .ic, .quiz-spinner { animation: none; }
+  .quiz-pop, .quiz-tile, .quiz-tile.correct, .quiz-tile.wrong, .quiz-pod, .quiz-medal { animation: none !important; }
 }
