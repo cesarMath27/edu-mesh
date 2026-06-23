@@ -6,9 +6,12 @@
 //   - Publica un archivo (PDF/video…) que el nodo central firma y distribuye.
 // =============================================================================
 
+import { initQuizHost } from './quiz-host.js';
+
 const icon = (id) => `<svg class="ic" aria-hidden="true"><use href="#${id}"/></svg>`;
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const token = () => sessionStorage.getItem('edu-token') || '';
+let quizHost = null;
 
 // Canjea el PIN por un token de sesión (el PIN NO viaja en la URL ni se guarda).
 async function login(pinValue) {
@@ -32,7 +35,7 @@ export function initMaestro() {
   const layout = document.querySelector('.layout');
   let timer = null;
 
-  const close = () => { clearInterval(timer); panel.hidden = true; layout.hidden = false; };
+  const close = () => { clearInterval(timer); quizHost?.stop(); panel.hidden = true; layout.hidden = false; };
 
   btn.addEventListener('click', async () => {
     if (!token()) {
@@ -84,12 +87,20 @@ function render(panel, data, close) {
         <h3 class="card-title">¿Quién ya lo tiene?</h3>
         <div id="dashWrap"></div>
       </section>
-    </div>`;
+    </div>
+
+    <section class="card quiz-card">
+      <h3 class="card-title">${icon('i-board')} Cuestionario en vivo (juego)</h3>
+      <p class="muted small">Crea preguntas y juega estilo Kahoot: los alumnos responden desde su celular en tiempo real.</p>
+      <div id="quizHostWrap"></div>
+    </section>`;
 
   panel.querySelector('#maestroBack').addEventListener('click', close);
   panel.querySelector('#upBtn').addEventListener('click', () => publish(panel));
   panel.querySelector('#maestroSync').addEventListener('click', () => syncNow(panel));
   renderDashboard(panel.querySelector('#dashWrap'), data);
+  quizHost?.stop();
+  quizHost = initQuizHost(panel.querySelector('#quizHostWrap'));
 }
 
 // Fuerza una sincronización con el hub ahora mismo (el avance se ve en el chip "sync").

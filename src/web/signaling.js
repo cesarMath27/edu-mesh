@@ -18,6 +18,7 @@
 
 import { WebSocketServer } from 'ws';
 import { randomUUID } from 'node:crypto';
+import { createQuiz } from './quiz.js';
 
 export function attachSignaling(httpServer, { log } = {}) {
   const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
@@ -29,6 +30,12 @@ export function attachSignaling(httpServer, { log } = {}) {
   const announce = (peerId, hash, i) => { const m = ensure(hash); if (!m.has(i)) m.set(i, new Set()); m.get(i).add(peerId); };
   const providers = (hash, i) => { const s = index.get(hash)?.get(i); return s ? [...s] : []; };
   const removePeer = (peerId) => { peers.delete(peerId); meta.delete(peerId); for (const m of index.values()) for (const s of m.values()) s.delete(peerId); };
+
+  // --- Cuestionario en vivo ("Kahoot"): se monta sobre estas mismas conexiones ---
+  const broadcast = (obj) => { const s = JSON.stringify(obj); for (const w of peers.values()) if (w.readyState === 1) w.send(s); };
+  const sendTo = (pid, obj) => { const w = peers.get(pid); if (w && w.readyState === 1) w.send(JSON.stringify(obj)); };
+  const getPlayers = () => [...meta.entries()].map(([id, m]) => ({ id, name: m.name || `Alumno-${id.slice(0, 4)}` }));
+  const quiz = createQuiz({ broadcast, sendTo, getPlayers, log });
 
   wss.on('connection', (ws) => {
     const id = randomUUID();
@@ -61,6 +68,9 @@ export function attachSignaling(httpServer, { log } = {}) {
           if (target && target.readyState === 1) target.send(JSON.stringify({ t: 'signal', from: id, data: msg.data }));
           break;
         }
+        case 'quiz:answer':
+          quiz.submitAnswer(id, msg.index | 0);
+          break;
       }
     });
 
@@ -79,5 +89,5 @@ export function attachSignaling(httpServer, { log } = {}) {
     }));
   }
 
-  return { wss, getState };
+  return { wss, getState, quiz };
 }

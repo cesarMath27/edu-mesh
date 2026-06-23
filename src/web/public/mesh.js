@@ -20,6 +20,7 @@ export class Mesh {
     this._lookups = new Map();      // rid -> resolve
     this.serveChunk = async () => null;   // la app lo define: (hash,index) -> ArrayBuffer|null
     this.onPeers = () => {};        // notifica cambios en nº de compañeros
+    this.onQuiz = () => {};         // recibe los mensajes del cuestionario en vivo
   }
 
   connect() {
@@ -37,6 +38,7 @@ export class Mesh {
 
   hello(name) { this._send({ t: 'hello', name }); }                       // "me llamo así"
   progress(hash, have, total) { this._send({ t: 'progress', hash, have, total }); } // avance para el tablero
+  quizAnswer(index) { this._send({ t: 'quiz:answer', index }); }          // respuesta del alumno
 
   announce(hash, index) { this._send({ t: 'have', hash, index }); }
 
@@ -53,6 +55,7 @@ export class Mesh {
     if (msg.t === 'welcome') { this.id = msg.id; this._welcome?.(msg.id); return; }
     if (msg.t === 'peers') { const r = this._lookups.get(msg.rid); if (r) { this._lookups.delete(msg.rid); r(msg.peers); } return; }
     if (msg.t === 'signal') { this._onSignal(msg.from, msg.data); return; }
+    if (typeof msg.t === 'string' && msg.t.startsWith('quiz:')) { this.onQuiz(msg); return; }
   }
 
   _peer(peerId, initiator) {

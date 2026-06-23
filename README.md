@@ -42,7 +42,8 @@ contenido viaja firmado criptográficamente, así cada dispositivo verifica que 
 **Interfaz y maestro**
 - App web local: catálogo navegable, **vista previa por bloques**, descarga con progreso en vivo, abrir PDF, modo claro/oscuro, **lanzador con QR**.
 - **Indicador de sincronización** en vivo + el catálogo **se refresca solo** cuando llega contenido nuevo.
-- **Modo Maestro** (protegido por PIN): **tablero "¿quién ya lo tiene?"** + **publicar contenido** firmado desde el navegador + **"Sincronizar ahora"**.
+- **Modo Maestro** (protegido por PIN): **tablero "¿quién ya lo tiene?"** + **publicar contenido** firmado desde el navegador + **"Sincronizar ahora"** + **cuestionario en vivo**.
+- **Cuestionario en vivo (estilo Kahoot):** el maestro crea preguntas en el navegador y lanza una partida; los alumnos responden desde el celular en **tiempo real** (fichas de colores, temporizador, puntos por rapidez y **podio** final). Todo offline, sobre el mismo broker WebSocket.
 
 **Seguridad**
 - **Firma Ed25519** del contenido + **verificación en el navegador** (un bloque malicioso de otro celular no pasa).
@@ -66,6 +67,7 @@ contenido viaja firmado criptográficamente, así cada dispositivo verifica que 
 | Administración de carga | semáforo de concurrencia (`503` al saturar) | [util/limiter.js](src/util/limiter.js) |
 | UI + API + SSE | `http`/`https` nativo | [web/server.js](src/web/server.js), [web/public/](src/web/public/) |
 | Mesh navegador | WebRTC + WebSocket (broker) | [signaling.js](src/web/signaling.js), [public/mesh.js](src/web/public/mesh.js) |
+| Cuestionario en vivo | juego en tiempo real sobre el broker WS | [quiz.js](src/web/quiz.js), [public/quiz-host.js](src/web/public/quiz-host.js), [public/quiz-player.js](src/web/public/quiz-player.js) |
 | Verificación en navegador | TweetNaCl (Ed25519) + SHA-256 JS | [verify-sig.js](src/web/public/verify-sig.js), [sha256.js](src/web/public/sha256.js) |
 | Hub en línea | empaquetar + sincronizar | [build-pack.js](scripts/build-pack.js), [sync.js](scripts/sync.js), [docs/](docs/) |
 
@@ -96,8 +98,9 @@ edu-mesh/
     ├── sync/   sync-core.js (una pasada) · auto-sync.js (programador periódico)
     ├── db/     schema.sql · catalog.js
     ├── p2p/    discovery.js · server.js · client.js · download-manager.js
-    └── web/    server.js · signaling.js · tls.js · public/{index.html, app.js, mesh.js,
-                 download.js, store.js, preview.js, maestro.js, verify-sig.js, sha256.js, styles.css, vendor/}
+    └── web/    server.js · signaling.js · quiz.js · tls.js · public/{index.html, app.js, mesh.js,
+                 download.js, store.js, preview.js, quiz-host.js, quiz-player.js, maestro.js,
+                 verify-sig.js, sha256.js, styles.css, vendor/}
 ```
 
 > No se versionan: `node_modules/`, `nodes/` (datos por dispositivo), `keys/` (llaves),
@@ -144,10 +147,23 @@ Botón **Maestro** (protegido por PIN; si no lo fijas, se genera uno aleatorio y
 al arrancar):
 - **Tablero de distribución:** alumnos conectados y cuánto lleva cada quien de cada lección.
 - **Publicar contenido:** arrastra un archivo, el nodo central lo **firma** y lo distribuye.
+- **Cuestionario en vivo:** crea preguntas y lanza una partida (ver abajo).
 
 ```powershell
 node src/node-app.js --home=nodes/semilla --name=Central --teacher-pin=1234
 ```
+
+### Cuestionario en vivo (estilo Kahoot)
+En **Modo Maestro → "Cuestionario en vivo"**:
+1. Escribe un título y tus preguntas (2–4 opciones, marca la correcta, elige los segundos).
+2. **Lanzar partida** → en cada celular aparece solo la pantalla del juego.
+3. **Empezar** muestra la 1ª pregunta; los alumnos tocan una ficha de color. Ganan **más
+   puntos por responder rápido** (con bono por racha de aciertos).
+4. **Mostrar respuesta** revela la correcta + el marcador; **Siguiente** avanza; al final, **podio**.
+
+Funciona 100% offline sobre el mismo broker WebSocket del mesh (no necesita internet). El
+maestro controla la partida por HTTP autenticado; los alumnos juegan por WebSocket. Las
+partidas son **efímeras** (no se guardan): pensadas para repasar en clase.
 
 ---
 
