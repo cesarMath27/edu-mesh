@@ -21,6 +21,7 @@ import { openCatalog } from './db/catalog.js';
 import { startFileServer } from './p2p/server.js';
 import { startDiscoveryResponder } from './p2p/discovery.js';
 import { startWebServer } from './web/server.js';
+import { createQuizStore } from './web/quiz-store.js';
 import { startAutoSync } from './sync/auto-sync.js';
 import { getOrBuildChunkInfo } from './crypto/chunking.js';
 import { DB_PATH, CACHE_DIR, HOME, NODE_NAME, CHUNK_SIZE, WEB_PORT, TEACHER_PIN, TEACHER_PIN_IS_GENERATED, TLS, SYNC_FROM, SYNC_INTERVAL_MIN } from './config.js';
@@ -82,6 +83,7 @@ await startWebServer({
   runSyncNow: autoSync ? autoSync.runNow : null,
   getCatalogVersion: () => catalogVersion,
   onCatalogChanged: bumpCatalog,
+  quizStore: createQuizStore(path.join(HOME, 'quizzes')),
 });
 
 // Banner de conexión: URL en este equipo, IPs para los celulares y un QR.

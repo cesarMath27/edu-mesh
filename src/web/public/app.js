@@ -10,6 +10,7 @@ import { mesh, ensureMesh, downloadFile, localAvailability, announceLocal, assem
 import { initMaestro } from './maestro.js';
 import { verifyFileRecord } from './verify-sig.js';
 import { openPreview } from './preview.js';
+import { initQuizPlayer } from './quiz-player.js';
 
 const state = { tree: [], node: null, selected: null, avail: {}, verified: {}, authIdx: {} };
 
@@ -309,6 +310,7 @@ function showError(prog, message) {
 initTheme();
 initPeersChip();
 initSyncStatus();
+initQuizPlayer();
 initMaestro();
 window.addEventListener('catalog-changed', () => reloadCatalog().catch(() => {}));
 load().catch((err) => { $('#content').innerHTML = `<p class="muted">Error al cargar: ${esc(err.message)}</p>`; });

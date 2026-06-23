@@ -99,6 +99,39 @@ function sendJson(res, code, obj) {
   res.end(body);
 }
 
+/** Lee el cuerpo de una petición como texto, con tope de tamaño. */
+function readBody(req, maxBytes = 256 * 1024) {
+  return new Promise((resolve, reject) => {
+    let body = ''; let n = 0;
+    req.on('data', (c) => { n += c.length; if (n > maxBytes) { reject(new Error('cuerpo demasiado grande')); req.destroy(); } else body += c; });
+    req.on('end', () => resolve(body));
+    req.on('error', reject);
+  });
+}
+
+/** Valida y SANEA un cuestionario enviado por el maestro. Devuelve {game} o {error}. */
+function validateQuiz(payload) {
+  const clip = (s, n) => String(s ?? '').replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '').slice(0, n).trim();
+  const title = clip(payload.title, 80) || 'Cuestionario';
+  const raw = Array.isArray(payload.questions) ? payload.questions : [];
+  if (raw.length < 1) return { error: 'Agrega al menos una pregunta.' };
+  if (raw.length > 50) return { error: 'Máximo 50 preguntas por partida.' };
+  const questions = [];
+  for (const [i, q] of raw.entries()) {
+    const text = clip(q.q, 300);
+    if (!text) return { error: `La pregunta ${i + 1} está vacía.` };
+    const options = (Array.isArray(q.options) ? q.options : []).map((o) => clip(o, 120));
+    if (options.length > 4) options.length = 4;
+    if (options.length < 2) return { error: `La pregunta ${i + 1} necesita al menos 2 opciones.` };
+    if (options.some((o) => !o)) return { error: `Completa todas las opciones de la pregunta ${i + 1}.` };
+    const correct = Number(q.correct) | 0;
+    if (correct < 0 || correct >= options.length) return { error: `Marca la respuesta correcta de la pregunta ${i + 1}.` };
+    const time = Math.max(5, Math.min(120, Number(q.time) | 0 || 20));
+    questions.push({ q: text, options, correct, time });
+  }
+  return { game: { title, questions } };
+}
+
 function serveStatic(res, urlPath) {
   const file = urlPath === '/' ? 'index.html' : urlPath.replace(/^\/+/, '');
   const full = path.join(PUBLIC_DIR, file);
@@ -168,10 +201,11 @@ function serveFile(req, res, filePath, mime, name) {
  */
 export async function startWebServer({
   cat, cacheDir, nodeName, getChunkInfo, resolveHashToFile, log,
-  getSyncStatus, runSyncNow, getCatalogVersion, onCatalogChanged,
+  getSyncStatus, runSyncNow, getCatalogVersion, onCatalogChanged, quizStore,
 }) {
   const activeDownloads = new Set(); // evita descargas duplicadas del mismo hash
   let brokerState = () => [];         // lo fija attachSignaling tras escuchar
+  let quizGame = null;                // juego de cuestionario en vivo (lo fija el broker)
 
   // Limitador de carga: el central solo sirve N bloques a la vez (resto en cola;
   // si la cola se llena, responde 503 y los celulares se apoyan en sus compañeros).
@@ -428,6 +462,57 @@ export async function startWebServer({
       return sendJson(res, 200, { ok: true, status: getSyncStatus ? getSyncStatus() : null });
     }
 
+    // ---- API Maestro: cuestionario en vivo ("Kahoot") ----
+    //  El maestro controla la partida por HTTP (autenticado); los alumnos juegan
+    //  por WebSocket. Todas las rutas requieren sesión de maestro.
+    if (route.startsWith('/api/quiz/')) {
+      if (!isTeacher(req)) return sendJson(res, 401, { error: 'No autorizado' });
+
+      // -- Guardar / cargar (no necesitan partida activa) --
+      if (route === '/api/quiz/saved' && req.method === 'GET') {
+        return sendJson(res, 200, { quizzes: quizStore ? quizStore.list() : [] });
+      }
+      if (route === '/api/quiz/load' && req.method === 'GET') {
+        const q = quizStore && quizStore.load(url.searchParams.get('id'));
+        if (!q) return sendJson(res, 404, { error: 'Cuestionario no encontrado' });
+        return sendJson(res, 200, q);
+      }
+      // -- Estado de la partida en vivo --
+      if (route === '/api/quiz/state') {
+        if (!quizGame) return sendJson(res, 503, { error: 'El broker aún no está listo.' });
+        return sendJson(res, 200, quizGame.hostState());
+      }
+      if (req.method !== 'POST') return sendJson(res, 405, { error: 'Método no permitido' });
+
+      let payload = {};
+      try { const b = await readBody(req); payload = b ? JSON.parse(b) : {}; }
+      catch { return sendJson(res, 400, { error: 'Cuerpo inválido' }); }
+
+      if (route === '/api/quiz/save') {
+        const v = validateQuiz(payload);
+        if (v.error) return sendJson(res, 400, { error: v.error });
+        if (!quizStore) return sendJson(res, 500, { error: 'Este nodo no guarda cuestionarios.' });
+        return sendJson(res, 200, quizStore.save({ id: payload.id, ...v.game }));
+      }
+      if (route === '/api/quiz/delete') {
+        if (quizStore) quizStore.remove(payload.id);
+        return sendJson(res, 200, { ok: true });
+      }
+
+      // -- Control de la partida en vivo (requiere broker) --
+      if (!quizGame) return sendJson(res, 503, { error: 'El broker aún no está listo.' });
+      if (route === '/api/quiz/start') {
+        const v = validateQuiz(payload);
+        if (v.error) return sendJson(res, 400, { error: v.error });
+        return sendJson(res, 200, quizGame.start(v.game));
+      }
+      if (route === '/api/quiz/next') return sendJson(res, 200, quizGame.next() || { state: 'idle' });
+      if (route === '/api/quiz/reveal') return sendJson(res, 200, quizGame.reveal());
+      if (route === '/api/quiz/end') return sendJson(res, 200, quizGame.end() || { state: 'idle' });
+      if (route === '/api/quiz/cancel') { quizGame.cancel(); return sendJson(res, 200, { ok: true }); }
+      return sendJson(res, 404, { error: 'Ruta de cuestionario desconocida' });
+    }
+
     // ---- Estáticos ----
     if (req.method === 'GET') return serveStatic(res, route);
     res.writeHead(405, { 'Content-Type': 'text/plain' });
@@ -441,8 +526,9 @@ export async function startWebServer({
 
   return new Promise((resolve) => {
     server.listen(WEB_PORT, () => {
-      const broker = attachSignaling(server, { log }); // broker WebRTC + estado de distribución
+      const broker = attachSignaling(server, { log }); // broker WebRTC + distribución + quiz
       brokerState = broker.getState;
+      quizGame = broker.quiz;
       log?.(`🌐 UI disponible en ${TLS ? 'https' : 'http'}://localhost:${WEB_PORT}`);
       resolve({ server, port: WEB_PORT });
     });
