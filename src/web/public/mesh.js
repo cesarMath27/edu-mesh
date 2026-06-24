@@ -36,7 +36,7 @@ export class Mesh {
 
   _send(o) { if (this.ws && this.ws.readyState === 1) this.ws.send(JSON.stringify(o)); }
 
-  hello(name) { this._send({ t: 'hello', name }); }                       // "me llamo así"
+  hello(name, role) { this._send({ t: 'hello', name, role }); }           // "me llamo así" (role:'teacher' = no cuenta como alumno)
   progress(hash, have, total) { this._send({ t: 'progress', hash, have, total }); } // avance para el tablero
   quizAnswer(index) { this._send({ t: 'quiz:answer', index }); }          // respuesta del alumno
 

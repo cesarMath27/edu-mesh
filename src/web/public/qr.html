@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="es" data-theme="auto">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>edu-mesh · Escanea para entrar</title>
+  <style>
+    :root {
+      --bg: #0b1020; --bg2: #111a33; --fg: #f4f7ff; --muted: #9fb0d0;
+      --accent: #5b8cff; --accent2: #38e0c0; --card: #ffffff; --ink: #0b1020;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      color: var(--fg);
+      background:
+        radial-gradient(1200px 800px at 15% -10%, #1b2a52 0%, transparent 60%),
+        radial-gradient(1000px 700px at 110% 120%, #143b3a 0%, transparent 55%),
+        var(--bg);
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      min-height: 100vh; padding: clamp(16px, 4vh, 48px); gap: clamp(12px, 3vh, 28px);
+      text-align: center; overflow: hidden;
+    }
+    h1 {
+      font-size: clamp(1.6rem, 4.5vw, 3.4rem); margin: 0; font-weight: 800;
+      letter-spacing: -0.02em; line-height: 1.05;
+    }
+    .sub { color: var(--muted); font-size: clamp(1rem, 2.2vw, 1.5rem); margin: 0; }
+    .qr-wrap {
+      background: var(--card); border-radius: 28px; padding: clamp(16px, 3vw, 36px);
+      box-shadow: 0 30px 80px rgba(0,0,0,.45), 0 0 0 1px rgba(255,255,255,.06);
+      width: min(58vh, 88vw); height: min(58vh, 88vw);
+      display: flex; align-items: center; justify-content: center;
+    }
+    .qr-wrap svg, .qr-wrap img { width: 100%; height: 100%; display: block; }
+    .url {
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: clamp(1.1rem, 3vw, 2.2rem); font-weight: 700;
+      background: rgba(255,255,255,.08); padding: .4em .8em; border-radius: 14px;
+      border: 1px solid rgba(255,255,255,.12); word-break: break-all;
+    }
+    .steps {
+      display: flex; gap: clamp(10px, 2vw, 26px); flex-wrap: wrap; justify-content: center;
+      color: var(--muted); font-size: clamp(.85rem, 1.6vw, 1.15rem);
+    }
+    .steps b { color: var(--fg); }
+    .pill {
+      display: inline-flex; align-items: center; gap: .5em;
+      background: rgba(255,255,255,.06); padding: .55em 1em; border-radius: 999px;
+      border: 1px solid rgba(255,255,255,.1);
+    }
+    .count {
+      display: inline-flex; align-items: center; gap: .55em;
+      font-size: clamp(1rem, 2.2vw, 1.5rem); font-weight: 700;
+    }
+    .dot { width: .7em; height: .7em; border-radius: 50%; background: var(--accent2);
+      box-shadow: 0 0 0 0 rgba(56,224,192,.6); animation: pulse 2s infinite; }
+    @keyframes pulse {
+      0% { box-shadow: 0 0 0 0 rgba(56,224,192,.55); }
+      70% { box-shadow: 0 0 0 16px rgba(56,224,192,0); }
+      100% { box-shadow: 0 0 0 0 rgba(56,224,192,0); }
+    }
+    .warn { color: #ffd27d; max-width: 28ch; font-size: clamp(1rem, 2.4vw, 1.6rem); }
+    .brand { position: fixed; top: 18px; left: 22px; color: var(--muted);
+      font-weight: 700; letter-spacing: .06em; font-size: .95rem; opacity: .8; }
+    @media (prefers-color-scheme: light) {
+      :root { --bg: #eef2fb; --fg: #0b1020; --muted: #4a5a7a; }
+      body { background:
+        radial-gradient(1200px 800px at 15% -10%, #d7e2ff 0%, transparent 60%),
+        radial-gradient(1000px 700px at 110% 120%, #cdeee9 0%, transparent 55%),
+        var(--bg); }
+      .url, .pill, .steps .pill { background: rgba(11,16,32,.05); border-color: rgba(11,16,32,.1); }
+    }
+  </style>
+</head>
+<body>
+  <div class="brand">edu-mesh</div>
+  <h1>Escanea para entrar a la clase</h1>
+  <p class="sub">Conéctate a la <b>WiFi del salón</b> y apunta la cámara al código</p>
+
+  <div class="qr-wrap" id="qrWrap" aria-label="Código QR para ingresar">
+    <!-- el QR se inyecta aquí -->
+  </div>
+
+  <div class="url" id="url">…</div>
+
+  <div class="steps">
+    <span class="pill">1 · Abre la <b>cámara</b> del celular</span>
+    <span class="pill">2 · Apunta al <b>QR</b></span>
+    <span class="pill">3 · Toca el <b>enlace</b></span>
+  </div>
+
+  <div class="count" id="count" hidden>
+    <span class="dot"></span><span id="countText">0 conectados</span>
+  </div>
+
+  <script>
+    const $ = (s) => document.querySelector(s);
+
+    async function loadNet() {
+      try {
+        const net = await fetch('/api/net').then((r) => r.json());
+        if (net.best) {
+          $('#url').textContent = net.best.replace(/^https?:\/\//, '');
+          $('#qrWrap').innerHTML = '<img alt="QR de ingreso" src="/api/qr.svg?t=' + Date.now() + '" />';
+        } else {
+          $('#url').textContent = '— sin red local —';
+          $('#qrWrap').innerHTML = '<div class="warn">Conecta este equipo a una red WiFi o crea un punto de acceso (hotspot) para que entren los celulares.</div>';
+        }
+      } catch {
+        $('#url').textContent = 'reconectando…';
+      }
+    }
+
+    async function loadPresence() {
+      try {
+        const { count } = await fetch('/api/presence').then((r) => r.json());
+        const el = $('#count');
+        el.hidden = count <= 0;
+        $('#countText').textContent = count === 1 ? '1 alumno conectado' : count + ' alumnos conectados';
+      } catch { /* sin broker todavía */ }
+    }
+
+    loadNet();
+    loadPresence();
+    setInterval(loadNet, 20000);     // re-detecta la IP por si cambia de red
+    setInterval(loadPresence, 4000); // alumnos conectados en vivo
+  </script>
+</body>
+</html>

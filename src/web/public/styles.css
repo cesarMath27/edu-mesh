@@ -271,6 +271,33 @@ table.dash td.none { color: var(--faint); }
 
 @media (max-width: 760px) { .maestro-grid { grid-template-columns: 1fr; } }
 
+/* ---------- Ajustes del maestro (tarjeta superior, solo en este equipo) ---------- */
+.btn.small { min-height: 34px; padding: 0 11px; font-size: 13px; }
+.settings-card { border-color: color-mix(in srgb, var(--primary) 28%, var(--border)); }
+.settings-grid { display: grid; grid-template-columns: 1fr auto; gap: 20px; align-items: start; margin-top: 12px; }
+.settings-main { display: flex; flex-direction: column; gap: 16px; }
+.pin-box, .join-box { display: flex; flex-direction: column; gap: 6px; }
+.pin-row, .join-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.pin {
+  font-size: 30px; font-weight: 800; letter-spacing: .14em; color: var(--primary-700);
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  padding: 4px 14px; border-radius: 10px; border: 1px solid color-mix(in srgb, var(--primary) 28%, transparent);
+}
+.join {
+  font-size: 15px; font-weight: 700; color: var(--text);
+  background: var(--surface-2); padding: 6px 12px; border-radius: 9px; border: 1px solid var(--border-strong);
+  word-break: break-all;
+}
+.join-box .btn { align-self: flex-start; margin-top: 4px; }
+.set-list { display: flex; flex-direction: column; gap: 7px; }
+.set-row { display: flex; justify-content: space-between; gap: 14px; font-size: 13.5px; border-bottom: 1px dashed var(--border); padding-bottom: 6px; }
+.set-row:last-child { border-bottom: none; }
+.set-k { color: var(--muted); }
+.set-v { font-weight: 600; text-align: right; word-break: break-word; }
+.settings-qr { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.settings-qr img { width: 168px; height: 168px; background: #fff; padding: 8px; border-radius: 12px; border: 1px solid var(--border); }
+@media (max-width: 760px) { .settings-grid { grid-template-columns: 1fr; } .settings-qr { align-items: flex-start; } }
+
 /* ---------- Chip de sincronización automática ---------- */
 .sync-chip { color: var(--muted); }
 .sync-chip.spin .ic { animation: spin 1s linear infinite; color: var(--primary-700); }

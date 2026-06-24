@@ -50,7 +50,7 @@ export function attachSignaling(httpServer, { log } = {}) {
       const m = meta.get(id);
       switch (msg.t) {
         case 'hello':
-          if (m) m.name = String(msg.name || '').slice(0, 40);
+          if (m) { m.name = String(msg.name || '').slice(0, 40); m.role = msg.role === 'teacher' ? 'teacher' : null; }
           break;
         case 'progress':
           if (m) m.prog.set(msg.hash, { have: msg.have | 0, total: msg.total | 0 });
@@ -81,8 +81,9 @@ export function attachSignaling(httpServer, { log } = {}) {
   log?.('🛰  Broker de señalización WebRTC activo en /ws');
 
   // Estado para el tablero del maestro: alumnos conectados + su avance por archivo.
+  //  Excluye al propio maestro (role:'teacher') para no contarlo como alumno.
   function getState() {
-    return [...meta.entries()].map(([id, m]) => ({
+    return [...meta.entries()].filter(([, m]) => m.role !== 'teacher').map(([id, m]) => ({
       id,
       name: m.name || `Alumno-${id.slice(0, 4)}`,
       files: Object.fromEntries([...m.prog.entries()]),

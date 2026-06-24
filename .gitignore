@@ -1,6 +1,12 @@
 # --- Dependencias ---
 node_modules/
 
+# --- Node.js portátil que descarga el instalador (pesado y por máquina) ---
+runtime/
+
+# --- PIN del maestro (estable entre clases; local, NUNCA se sube) ---
+.teacher-pin
+
 # --- Datos generados por cada nodo (cada "dispositivo" tiene su propio home) ---
 nodes/
 

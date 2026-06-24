@@ -34,8 +34,13 @@ import { hashFile } from '../crypto/hashing.js';
 import { buildManifest } from '../catalog/manifest.js';
 import { stableStringify } from '../util/stable-json.js';
 import { createLimiter } from '../util/limiter.js';
+import { lanAddresses, bestLan } from '../util/netinfo.js';
 import { randomBytes, createHash, timingSafeEqual } from 'node:crypto';
-import { WEB_PORT, TEACHER_PIN, CHUNK_SIZE, ROOT, MAX_UPLOAD_MB, TLS, SERVE_CONCURRENCY, SERVE_QUEUE } from '../config.js';
+import QRCode from 'qrcode';
+import {
+  WEB_PORT, TEACHER_PIN, TEACHER_PIN_IS_GENERATED, CHUNK_SIZE, ROOT, MAX_UPLOAD_MB, TLS,
+  SERVE_CONCURRENCY, SERVE_QUEUE, SYNC_FROM, SYNC_INTERVAL_MIN, DISCOVERY_PORT,
+} from '../config.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -217,6 +222,12 @@ export async function startWebServer({
   const fails = new Map();                  // ip -> { count, until } (anti fuerza bruta)
   const pinDigest = createHash('sha256').update(String(TEACHER_PIN)).digest();
   const clientIp = (req) => req.socket.remoteAddress || 'desconocido';
+  // ¿La petición viene del MISMO equipo (loopback)? Sirve para que el panel del
+  // maestro de ESTE equipo pueda auto-entrar y ver el PIN, sin exponerlo a la LAN.
+  const isLoopback = (req) => {
+    const a = req.socket.remoteAddress || '';
+    return a === '::1' || a === '::ffff:127.0.0.1' || a.startsWith('127.');
+  };
   const lockedOut = (req) => { const r = fails.get(clientIp(req)); return !!r && r.until > Date.now(); };
   const recordFail = (req) => {
     const k = clientIp(req); const r = fails.get(k) || { count: 0, until: 0 };
@@ -245,6 +256,66 @@ export async function startWebServer({
     // ---- API: catálogo ----
     if (route === '/api/catalog') {
       return sendJson(res, 200, { tree: buildCatalogTree(cat, cacheDir) });
+    }
+
+    // ---- API: info de red (pública) — URLs para que entren los celulares ----
+    if (route === '/api/net') {
+      const proto = TLS ? 'https' : 'http';
+      const best = bestLan();
+      return sendJson(res, 200, {
+        proto, port: WEB_PORT, tls: TLS, name: nodeName,
+        best: best ? `${proto}://${best.address}:${WEB_PORT}` : null,
+        urls: lanAddresses().map((a) => ({ url: `${proto}://${a.address}:${WEB_PORT}`, iface: a.iface })),
+      });
+    }
+
+    // ---- API: presencia (pública, solo el CONTEO) — alumnos conectados ----
+    if (route === '/api/presence') {
+      return sendJson(res, 200, { count: brokerState().length });
+    }
+
+    // ---- API: QR del enlace de ingreso como SVG (público) ----
+    //  Por defecto apunta a la mejor IP de la LAN; ?url= permite forzar otra.
+    if (route === '/api/qr.svg') {
+      const proto = TLS ? 'https' : 'http';
+      const best = bestLan();
+      const fallback = best ? `${proto}://${best.address}:${WEB_PORT}` : `${proto}://localhost:${WEB_PORT}`;
+      const target = url.searchParams.get('url') || fallback;
+      try {
+        const svg = await QRCode.toString(target, { type: 'svg', margin: 1, errorCorrectionLevel: 'M' });
+        res.writeHead(200, { 'Content-Type': 'image/svg+xml; charset=utf-8', 'Cache-Control': 'no-store' });
+        return res.end(svg);
+      } catch {
+        res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
+        return res.end('No se pudo generar el QR');
+      }
+    }
+
+    // ---- API Maestro: bootstrap (SOLO LOCALHOST) ----
+    //  Entrega el PIN y los ajustes en curso para que el PANEL del maestro de
+    //  ESTE equipo auto-entre y los muestre. Nunca se expone a la LAN: otros
+    //  dispositivos reciben 403 y deben teclear el PIN como siempre.
+    if (route === '/api/teacher/info') {
+      if (!isLoopback(req)) return sendJson(res, 403, { error: 'Solo disponible en este equipo (localhost).' });
+      const proto = TLS ? 'https' : 'http';
+      const best = bestLan();
+      return sendJson(res, 200, {
+        pin: String(TEACHER_PIN),
+        pinIsGenerated: TEACHER_PIN_IS_GENERATED,
+        settings: {
+          name: nodeName,
+          proto, port: WEB_PORT, tls: TLS,
+          url: `${proto}://localhost:${WEB_PORT}`,
+          lan: best ? `${proto}://${best.address}:${WEB_PORT}` : null,
+          syncFrom: SYNC_FROM || null,
+          syncIntervalMin: SYNC_INTERVAL_MIN,
+          maxUploadMb: MAX_UPLOAD_MB,
+          serveConcurrency: SERVE_CONCURRENCY,
+          serveQueue: SERVE_QUEUE,
+          chunkSizeKiB: Math.round(CHUNK_SIZE / 1024),
+          discoveryPort: DISCOVERY_PORT,
+        },
+      });
     }
 
     // ---- API: descarga con progreso en vivo (SSE) ----

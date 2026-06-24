@@ -77,20 +77,25 @@ contenido viaja firmado criptográficamente, así cada dispositivo verifica que 
 
 ```
 edu-mesh/
-├── iniciar-demo.bat / .command   # lanzador de un clic (arranca + muestra QR)
-├── docs/                         # página de descarga (hub) — hosteable gratis
+├── Instalar-edu-mesh.bat            # ▶ INSTALADOR visual (Windows): Node portátil + deps + setup
+├── instalar-edu-mesh.command        # ▶ INSTALADOR (Mac/Linux): igual, sin admin
+├── Iniciar-Maestro.bat / iniciar-maestro.command  # ▶ INICIADOR de dos pantallas (QR + panel)
+├── iniciar-demo.bat / .command      # lanzador clásico de un clic (arranca + muestra QR)
+├── docs/                            # página de descarga (hub) — hosteable gratis
 ├── scripts/
-│   ├── generate-keys.js          # gestiona autoridades (alta/lista/revoca)
-│   ├── setup-demo.js             # prepara el demo completo
-│   ├── import-folder.js          # carga contenido desde carpetas (npm run content)
-│   ├── add-content.js            # firma y registra UN archivo
-│   ├── build-manifest.js         # firma el catálogo de un home → manifest.json
-│   ├── import-manifest.js        # verifica e importa un manifiesto
-│   ├── build-pack.js             # empaqueta contenido para el hub (npm run pack)
-│   └── sync.js                   # sincroniza un paquete del hub (npm run sync)
+│   ├── install/instalar.ps1         # ventana de instalación (Windows Forms, barra de progreso)
+│   ├── launch.js                    # iniciador: arranca el nodo y abre las 2 pantallas (npm run maestro)
+│   ├── generate-keys.js             # gestiona autoridades (alta/lista/revoca)
+│   ├── setup-demo.js                # prepara el demo completo
+│   ├── import-folder.js             # carga contenido desde carpetas (npm run content)
+│   ├── add-content.js               # firma y registra UN archivo
+│   ├── build-manifest.js            # firma el catálogo de un home → manifest.json
+│   ├── import-manifest.js           # verifica e importa un manifiesto
+│   ├── build-pack.js                # empaqueta contenido para el hub (npm run pack)
+│   └── sync.js                      # sincroniza un paquete del hub (npm run sync)
 └── src/
-    ├── config.js                 # configuración por --flag / variables EDU_*
-    ├── node-app.js               # ▶ App por dispositivo: semilla + UI web + auto-sync (RECOMENDADO)
+    ├── config.js                    # configuración por --flag / variables EDU_*
+    ├── node-app.js                  # ▶ App por dispositivo: semilla + UI web + auto-sync (RECOMENDADO)
     ├── node-seed.js / node-student.js   # ▶ nodos CLI (solo P2P entre nodos)
     ├── util/   log.js · stable-json.js · netinfo.js · limiter.js (administración de carga)
     ├── crypto/ hashing.js · signature.js · keystore.js · chunking.js · validation.js
@@ -98,32 +103,60 @@ edu-mesh/
     ├── sync/   sync-core.js (una pasada) · auto-sync.js (programador periódico)
     ├── db/     schema.sql · catalog.js
     ├── p2p/    discovery.js · server.js · client.js · download-manager.js
-    └── web/    server.js · signaling.js · quiz.js · quiz-store.js · tls.js · public/{index.html,
+    └── web/    server.js (+ /api/qr.svg, /api/net, /api/teacher/info) · signaling.js · quiz.js ·
+                 quiz-store.js · tls.js · public/{index.html, qr.html (pantalla del QR),
                  app.js, mesh.js, download.js, store.js, preview.js, quiz-host.js, quiz-player.js,
-                 sfx.js, confetti.js, maestro.js, verify-sig.js, sha256.js, styles.css, vendor/}
+                 sfx.js, confetti.js, maestro.js (panel + ajustes), verify-sig.js, sha256.js, styles.css, vendor/}
 ```
 
-> No se versionan: `node_modules/`, `nodes/` (datos por dispositivo), `keys/` (llaves),
-> `manifest.json`, `contenido/` y `dist-pack/` (se generan localmente).
+> No se versionan: `node_modules/`, `runtime/` (Node portátil), `.teacher-pin`, `nodes/`
+> (datos por dispositivo), `keys/` (llaves), `manifest.json`, `contenido/` y `dist-pack/`.
 
 ---
 
 ## Requisitos
-- **Node.js ≥ 18** (cualquier versión sirve: SQLite va en WASM, **no compila binarios nativos**).
 - Estar en la misma red WiFi (o una sola PC para el demo).
+- Para el **instalador fácil**: nada más (descarga Node.js solo). Para el modo manual: **Node.js ≥ 18**.
 
-## Empezar (clonar y correr)
+## Empezar — opción FÁCIL (recomendada para maestros) 🟢
+
+No necesitas saber de programación ni instalar nada a mano. Descarga el proyecto
+(botón verde **Code → Download ZIP** en GitHub, y descomprímelo) y luego:
+
+| Paso | Windows | Mac / Linux |
+|------|---------|-------------|
+| **1. Instalar** (una vez) | doble clic en **`Instalar-edu-mesh.bat`** | doble clic en **`instalar-edu-mesh.command`** |
+| **2. Iniciar** (cada clase) | doble clic en **`Iniciar-Maestro.bat`** | doble clic en **`iniciar-maestro.command`** |
+
+- **El instalador** abre una ventana con barra de progreso y deja TODO listo desde cero:
+  si no tienes Node.js, **descarga una copia portátil** (en `runtime/`, **sin permisos de
+  administrador** y sin tocar tu sistema), instala las dependencias y prepara el catálogo.
+- **El iniciador** arranca el nodo central y abre **DOS pantallas**:
+  - 🟦 **Pantalla del QR** (proyéctala): un **código QR grande** para que los alumnos lo
+    escaneen con la cámara y entren — más el conteo de conectados en vivo.
+  - 🟩 **Panel del maestro**: el **PIN**, los enlaces, el QR y **todos los ajustes**, además
+    del tablero "¿quién ya lo tiene?", publicar material y el cuestionario en vivo. En el
+    equipo del maestro **entra solo** (no hace falta teclear el PIN).
+- El **PIN del maestro** se guarda en `.teacher-pin` para que sea **el mismo entre clases**
+  (fíjalo tú con `--teacher-pin=1234` si prefieres). Desde otro dispositivo de la LAN sí se
+  pide el PIN: nunca se expone fuera de este equipo.
+
+> 🍎 **Mac, la 1ª vez:** si Finder no deja abrir el `.command`, haz **clic derecho → Abrir**
+> (o en Terminal: `chmod +x *.command`). 🪟 **Windows:** si SmartScreen avisa, *Más
+> información → Ejecutar de todas formas* (el instalador no necesita administrador).
+
+## Empezar — opción manual (desarrolladores)
 
 ```powershell
 git clone https://github.com/cesarMath27/edu-mesh.git
 cd edu-mesh
-npm install      # solo JS/WASM: NO compila nada, funciona en cualquier Node
-npm run setup    # genera la autoridad, el catálogo firmado y un demo de prueba
+npm install        # solo JS/WASM: NO compila nada, funciona en cualquier Node
+npm run setup      # genera la autoridad, el catálogo firmado y un demo de prueba
+npm run maestro    # inicia + abre las dos pantallas (QR + panel del maestro)
 ```
 
-**Lanzador de un clic:** doble clic en `iniciar-demo.bat` (Windows) o
-`iniciar-demo.command` (Mac/Linux) → instala lo necesario, arranca el nodo central y
-**muestra la URL + un código QR** para que los celulares lo escaneen y entren.
+El demo clásico de un clic (solo QR en una pantalla) sigue disponible en
+`iniciar-demo.bat` / `iniciar-demo.command`.
 
 > ⚠️ **Windows/PowerShell:** los comandos con parámetros se corren con `node <script> --flag`,
 > **no** con `npm run <script> -- --flag` (npm no reenvía los argumentos tras `--`).
@@ -254,6 +287,7 @@ Abre `http://localhost:8080`, descarga, abre el PDF, entra al Modo Maestro con e
 | Comando | Qué hace |
 |---|---|
 | `setup` | Prepara el demo (autoridad + catálogo firmado + dispositivos) |
+| `maestro` | **Inicia + abre las 2 pantallas** (QR para alumnos + panel del maestro) |
 | `demo` / `app` | Arranca el nodo central (semilla + UI + broker) |
 | `content` | Importa la carpeta `contenido/` |
 | `keys` | Gestiona autoridades |

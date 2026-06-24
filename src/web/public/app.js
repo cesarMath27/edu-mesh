@@ -103,7 +103,9 @@ async function load() {
   // Nombre del alumno (para el tablero del maestro). Se guarda local.
   const name = localStorage.getItem('edu-name') || (`Alumno-${Math.random().toString(36).slice(2, 6)}`);
   localStorage.setItem('edu-name', name);
-  mesh.hello(name);
+  // La pantalla del maestro (?maestro=1) NO cuenta como alumno en el tablero ni en el QR.
+  const role = new URLSearchParams(location.search).get('maestro') === '1' ? 'teacher' : undefined;
+  mesh.hello(name, role);
 
   const [node, catalog] = await Promise.all([
     fetch('/api/node').then((r) => r.json()),
