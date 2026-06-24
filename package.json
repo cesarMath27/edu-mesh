@@ -13,6 +13,7 @@
     "student": "node src/node-student.js",
     "app": "node src/node-app.js",
     "demo": "node src/node-app.js --home=nodes/semilla --name=Central",
+    "maestro": "node scripts/launch.js",
     "add": "node scripts/add-content.js",
     "content": "node scripts/import-folder.js",
     "manifest": "node scripts/build-manifest.js",
@@ -32,6 +33,7 @@
   "license": "MIT",
   "dependencies": {
     "node-sqlite3-wasm": "^0.8.58",
+    "qrcode": "^1.5.4",
     "qrcode-terminal": "^0.12.0",
     "selfsigned": "^5.5.0",
     "ws": "^8.21.0"

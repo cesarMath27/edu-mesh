@@ -1,9 +1,14 @@
 // =============================================================================
-//  MODO MAESTRO (frontend) — tablero "¿quién ya lo tiene?" + publicar contenido
+//  MODO MAESTRO (frontend) — ajustes + tablero "¿quién ya lo tiene?" + publicar
 // -----------------------------------------------------------------------------
 //  Protegido por PIN (se valida en el nodo central). El maestro:
+//   - Ve los AJUSTES de la sesión (PIN, enlaces, QR, configuración) — solo si el
+//     panel se abre en ESTE equipo (localhost); desde la LAN no se revela el PIN.
 //   - Ve los alumnos conectados y cuánto lleva cada quien de cada lección.
 //   - Publica un archivo (PDF/video…) que el nodo central firma y distribuye.
+//
+//  El iniciador abre este panel en la pantalla del maestro con `?maestro=1`, que
+//  AUTO-ENTRA usando el PIN local (vía /api/teacher/info, solo loopback).
 // =============================================================================
 
 import { initQuizHost } from './quiz-host.js';
@@ -12,6 +17,7 @@ const icon = (id) => `<svg class="ic" aria-hidden="true"><use href="#${id}"/></s
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const token = () => sessionStorage.getItem('edu-token') || '';
 let quizHost = null;
+let teacherInfo = null; // { pin, settings } cuando el panel corre en este equipo
 
 // Canjea el PIN por un token de sesión (el PIN NO viaja en la URL ni se guarda).
 async function login(pinValue) {
@@ -21,6 +27,23 @@ async function login(pinValue) {
   if (r.status === 429) throw new Error('Demasiados intentos. Espera un minuto.');
   if (!r.ok) throw new Error('PIN incorrecto.');
   sessionStorage.setItem('edu-token', (await r.json()).token);
+}
+
+// Bootstrap local (solo loopback): trae el PIN y los ajustes de ESTA sesión.
+// Devuelve null si el servidor responde 403 (estamos entrando desde la LAN).
+async function fetchTeacherInfo() {
+  try {
+    const r = await fetch('/api/teacher/info');
+    if (!r.ok) return null;
+    return await r.json();
+  } catch { return null; }
+}
+
+// En el equipo del maestro: entra solo, sin teclear el PIN.
+async function autoLogin() {
+  teacherInfo = await fetchTeacherInfo();
+  if (teacherInfo?.pin && !token()) await login(teacherInfo.pin);
+  return !!teacherInfo;
 }
 
 async function fetchDist() {
@@ -37,11 +60,17 @@ export function initMaestro() {
 
   const close = () => { clearInterval(timer); quizHost?.stop(); panel.hidden = true; layout.hidden = false; };
 
-  btn.addEventListener('click', async () => {
+  async function openPanel() {
     if (!token()) {
-      const p = prompt('PIN de maestro:');
-      if (p === null) return;
-      try { await login(p); } catch (e) { alert(e.message); return; }
+      // 1º intenta entrar solo (equipo del maestro); si no, pide el PIN.
+      await autoLogin().catch(() => {});
+      if (!token()) {
+        const p = prompt('PIN de maestro:');
+        if (p === null) return;
+        try { await login(p); } catch (e) { alert(e.message); return; }
+      }
+    } else if (!teacherInfo) {
+      teacherInfo = await fetchTeacherInfo(); // por si abrimos el panel ya logueados
     }
     try {
       const data = await fetchDist();
@@ -55,7 +84,14 @@ export function initMaestro() {
       if (e.message === 'NO_AUTH') { sessionStorage.removeItem('edu-token'); alert('Sesión expirada. Vuelve a entrar con el PIN.'); }
       else alert(e.message);
     }
-  });
+  }
+
+  btn.addEventListener('click', openPanel);
+
+  // El iniciador abre la pantalla del maestro con ?maestro=1 → auto-abre el panel.
+  if (new URLSearchParams(location.search).get('maestro') === '1') {
+    openPanel().catch(() => {});
+  }
 }
 
 function render(panel, data, close) {
@@ -67,6 +103,8 @@ function render(panel, data, close) {
         <button class="btn ghost" id="maestroBack" type="button">Volver al catálogo</button>
       </div>
     </div>
+
+    ${settingsHtml()}
 
     <div class="maestro-grid">
       <section class="card">
@@ -98,9 +136,68 @@ function render(panel, data, close) {
   panel.querySelector('#maestroBack').addEventListener('click', close);
   panel.querySelector('#upBtn').addEventListener('click', () => publish(panel));
   panel.querySelector('#maestroSync').addEventListener('click', () => syncNow(panel));
+  wireSettings(panel);
   renderDashboard(panel.querySelector('#dashWrap'), data);
   quizHost?.stop();
   quizHost = initQuizHost(panel.querySelector('#quizHostWrap'));
+}
+
+// ---- Ajustes del maestro (solo en el equipo del maestro: teacherInfo != null) ----
+function settingsHtml() {
+  if (!teacherInfo) return '';
+  const s = teacherInfo.settings || {};
+  const join = s.lan || s.url || '';
+  const row = (label, value) => `<div class="set-row"><span class="set-k">${esc(label)}</span><span class="set-v">${esc(value)}</span></div>`;
+  return `
+    <section class="card settings-card">
+      <h3 class="card-title">${icon('i-shield-check')} Ajustes de esta sesión</h3>
+      <div class="settings-grid">
+        <div class="settings-main">
+          <div class="pin-box">
+            <span class="muted small">PIN del Modo Maestro</span>
+            <div class="pin-row">
+              <code class="pin" id="setPin">${esc(teacherInfo.pin)}</code>
+              <button class="btn ghost small" id="copyPin" type="button">Copiar</button>
+            </div>
+            ${teacherInfo.pinIsGenerated ? '<p class="muted small">Generado para esta sesión. Para fijarlo siempre, usa el iniciador o <code>--teacher-pin=TUPIN</code>.</p>' : '<p class="muted small">Compártelo solo con quien deba publicar contenido.</p>'}
+          </div>
+          <div class="join-box">
+            <span class="muted small">Enlace para los celulares (misma WiFi)</span>
+            <div class="join-row">
+              <code class="join" id="setJoin">${esc(join.replace(/^https?:\/\//, '')) || '— sin red local —'}</code>
+              <button class="btn ghost small" id="copyJoin" type="button">Copiar</button>
+            </div>
+            <button class="btn primary small" id="openQr" type="button">${icon('i-eye')} Abrir pantalla de QR</button>
+          </div>
+          <div class="set-list">
+            ${row('Dispositivo', s.name || '—')}
+            ${row('Esta computadora', (s.url || '').replace(/^https?:\/\//, ''))}
+            ${row('Cifrado HTTPS (TLS)', s.tls ? 'activado' : 'desactivado')}
+            ${row('Sincronización con hub', s.syncFrom ? `${s.syncFrom} (cada ${s.syncIntervalMin} min)` : 'desactivada')}
+            ${row('Tamaño máx. al publicar', `${s.maxUploadMb} MB`)}
+            ${row('Bloques en paralelo', `${s.serveConcurrency} (cola ${s.serveQueue})`)}
+            ${row('Tamaño de bloque', `${s.chunkSizeKiB} KiB`)}
+          </div>
+        </div>
+        <div class="settings-qr">
+          <img alt="QR de ingreso" src="/api/qr.svg?t=${Date.now()}" />
+          <span class="muted small">Escanéalo para entrar</span>
+        </div>
+      </div>
+    </section>`;
+}
+
+function wireSettings(panel) {
+  if (!teacherInfo) return;
+  const copy = (text, btn) => {
+    navigator.clipboard?.writeText(text).then(() => {
+      const old = btn.textContent; btn.textContent = '✓ Copiado';
+      setTimeout(() => { btn.textContent = old; }, 1200);
+    }).catch(() => {});
+  };
+  panel.querySelector('#copyPin')?.addEventListener('click', (e) => copy(teacherInfo.pin, e.currentTarget));
+  panel.querySelector('#copyJoin')?.addEventListener('click', (e) => copy(teacherInfo.settings?.lan || teacherInfo.settings?.url || '', e.currentTarget));
+  panel.querySelector('#openQr')?.addEventListener('click', () => window.open('/qr.html', 'edu-mesh-qr'));
 }
 
 // Fuerza una sincronización con el hub ahora mismo (el avance se ve en el chip "sync").
