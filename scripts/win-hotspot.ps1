@@ -132,7 +132,7 @@ function ElevateForNetsh {
 }
 
 $adminHint  = 'Para crear la WiFi SIN internet hace falta permiso de Administrador: acepta el aviso de Windows, o abre el lanzador con clic derecho -> Ejecutar como administrador.'
-$dongleHint = 'Esta PC no puede crear una WiFi sin internet por software (su adaptador no soporta "red hospedada", o no tiene WiFi). Solucion: un adaptador USB WiFi con modo AP (baratos) o un pequeno router/travel-router.'
+$dongleHint = 'Esta PC no puede crear la WiFi por software (su adaptador no soporta "red hospedada"). Pero edu-mesh solo necesita una WiFi LOCAL, NO internet: usa el hotspot de un telefono (Android suele permitirlo aunque no tenga datos), CUALQUIER router o travel-router (aunque no tenga internet), o un adaptador USB WiFi con modo AP. Conecta la PC y los alumnos a esa misma red y listo.'
 
 # ============================== STOP =========================================
 if ($Action -eq 'stop') {

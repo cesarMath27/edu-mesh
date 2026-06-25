@@ -211,9 +211,16 @@ node src/node-app.js --home=nodes/semilla --hotspot --ap-ssid="Aula 5" --ap-pass
     compatible con modo AP.
   - **macOS:** no se puede por software → modo **asistido** (te guía a *Compartir Internet* +
     SSID/clave + QR).
-- **¿Tu PC no tiene WiFi (solo cable) o el adaptador no soporta "red hospedada"?** Entonces no
-  hay forma de crear la WiFi por software: usa un **adaptador USB WiFi con modo AP** (baratos) o
-  un pequeño **router/travel-router**. La app te lo dirá en el mensaje si ese es el caso.
+- **¿Tu PC no tiene WiFi (solo cable) o el adaptador no soporta "red hospedada"?** (compruébalo
+  con `netsh wlan show drivers` → *Compatibilidad con red hospedada*). Entonces **no** hay forma
+  de crear la WiFi por software en esa PC. Pero recuerda: **edu-mesh solo necesita una WiFi LOCAL,
+  no internet**. Opciones que funcionan **sin internet**, de la más fácil a la más robusta:
+  1. **El hotspot de un teléfono** (Android suele dejarlo aunque no tenga datos; en iPhone a
+     veces pide activar los datos). Conecta la PC y los alumnos a ese hotspot.
+  2. **Cualquier router o travel-router**, aunque **no tenga internet**: enciéndelo y conecta
+     todo a su WiFi. Es lo más estable y aguanta muchos más dispositivos.
+  3. **Un adaptador USB WiFi con modo AP** (baratos): así la PC **sí** puede crear la red con
+     `--hotspot`.
 - Si **no** puede crearlo automáticamente, **no rompe nada**: muestra instrucciones y el QR
   para que lo actives a mano; la app sigue funcionando igual. Al salir (Ctrl+C) intenta apagarlo;
   la **red hospedada** offline podría seguir activa hasta que reinicies o la apagues con permisos

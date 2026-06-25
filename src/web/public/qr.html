@@ -131,7 +131,7 @@
           $('#qrWrap').innerHTML = '<img alt="QR de ingreso" src="/api/qr.svg?t=' + Date.now() + '" />';
         } else {
           $('#url').textContent = '— sin red local —';
-          $('#qrWrap').innerHTML = '<div class="warn">Conecta este equipo a una red WiFi o crea un punto de acceso (hotspot) para que entren los celulares.</div>';
+          $('#qrWrap').innerHTML = '<div class="warn">Conecta este equipo y los celulares a una MISMA WiFi local — NO necesita internet: el hotspot de un teléfono o cualquier router sirven. Luego espera unos segundos.</div>';
         }
       } catch {
         $('#url').textContent = 'reconectando…';
