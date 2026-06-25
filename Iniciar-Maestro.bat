@@ -34,6 +34,9 @@ echo   Iniciando edu-mesh... se abriran DOS ventanas:
 echo     - QR a pantalla completa (para los alumnos)
 echo     - Panel del maestro (PIN, enlaces y ajustes)
 echo.
+echo   Tambien crea la WiFi del salon en esta PC (veras nombre, clave y QR).
+echo   Si NO la quieres, inicia con:  Iniciar-Maestro.bat --no-hotspot
+echo.
 echo   Deja ESTA ventana abierta durante la clase. (Ctrl+C para salir)
 echo.
 

@@ -145,6 +145,10 @@ No necesitas saber de programación ni instalar nada a mano. Descarga el proyect
   - 🟩 **Panel del maestro**: el **PIN**, los enlaces, el QR y **todos los ajustes**, además
     del tablero "¿quién ya lo tiene?", publicar material y el cuestionario en vivo. En el
     equipo del maestro **entra solo** (no hace falta teclear el PIN).
+- **Crea la WiFi del salón** (por defecto): el iniciador intenta levantar un **punto de
+  acceso** en la PC para que los alumnos se unan **sin router** (la pantalla del QR muestra el
+  QR para unirse). Es "mejor esfuerzo": si no se puede, te da las instrucciones y el QR para
+  activarlo a mano, y la app sigue igual. ¿No la quieres? Inicia con **`--no-hotspot`**.
 - El **PIN del maestro** se guarda en `.teacher-pin` para que sea **el mismo entre clases**
   (fíjalo tú con `--teacher-pin=1234` si prefieres). Desde otro dispositivo de la LAN sí se
   pide el PIN: nunca se expone fuera de este equipo.
@@ -208,7 +212,10 @@ node src/node-app.js --home=nodes/semilla --hotspot --ap-ssid="Aula 5" --ap-pass
   edu-mesh, lo **apaga solo**.
 - Para probarlo por separado: `npm run hotspot -- start` / `npm run hotspot -- stop`.
 
-> El iniciador de dos pantallas también lo acepta: `node scripts/launch.js --hotspot`.
+> El iniciador de dos pantallas (`Iniciar-Maestro` / `npm run maestro`) lo enciende
+> **por defecto**; desactívalo con `--no-hotspot`. Si arrancas con `--sync-from` (sincronización
+> con un hub, que necesita internet por WiFi), no se enciende solo para no cortar esa conexión:
+> fuérzalo con `--hotspot` si de todos modos lo quieres.
 
 ### Modo Maestro
 Botón **Maestro** (protegido por PIN; si no lo fijas, se genera uno aleatorio y se imprime

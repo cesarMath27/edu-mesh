@@ -80,11 +80,19 @@ const serverArgs = [
   `--home=${HOME}`, `--name=${NAME}`, `--web-port=${PORT}`, `--teacher-pin=${PIN}`,
 ];
 if (TLS) serverArgs.push('--tls');
-if (flag('hotspot')) serverArgs.push('--hotspot'); // crea el punto de acceso WiFi en la PC
+// El iniciador crea la WiFi del salón POR DEFECTO (--no-hotspot para desactivar).
+// Excepción: si se sincroniza con un hub (--sync-from, necesita internet por WiFi),
+// no se enciende solo para no cortar esa conexión; fuérzalo con --hotspot si quieres.
+const wantsSync = process.argv.slice(2).some((a) => a.startsWith('--sync-from'));
+const HOTSPOT = flag('hotspot') || (!flag('no-hotspot') && !wantsSync);
+if (HOTSPOT) serverArgs.push('--hotspot');
 for (const a of process.argv.slice(2)) if (a.startsWith('--sync') || a.startsWith('--ap-')) serverArgs.push(a); // --sync-from/-interval, --ap-ssid/-pass
 
 say(`\n${C.bold}${C.cyan}  edu-mesh · iniciando el nodo central…${C.reset}`);
-say(`${C.dim}  (deja esta ventana ABIERTA durante la clase · Ctrl+C para salir)${C.reset}\n`);
+say(`${C.dim}  (deja esta ventana ABIERTA durante la clase · Ctrl+C para salir)${C.reset}`);
+if (HOTSPOT) say(`${C.dim}  Creará la WiFi del salón en esta PC (abajo verás el nombre, la clave y un QR · desactiva con --no-hotspot).${C.reset}`);
+else if (wantsSync) say(`${C.dim}  WiFi del salón: desactivada porque sincronizas con un hub (necesita internet) · fuérzala con --hotspot.${C.reset}`);
+say('');
 
 const child = spawn(process.execPath, serverArgs, { cwd: ROOT, stdio: 'inherit' });
 
