@@ -135,7 +135,22 @@ if (HOTSPOT) {
   log(`     Clave:      ${AP_PASS}`);
   log('     O escanea este QR para unirse a la red de un toque:');
   qrcode.generate(wifiQrPayload(AP_SSID, AP_PASS), { small: true }, (q) => console.log('\n' + q));
-  log('     Ya conectados, escanean el OTRO QR (el de arriba) para abrir la app.');
+
+  // El AP crea una interfaz de red NUEVA con su propia IP (p.ej. 192.168.137.1),
+  // que aparece DESPUÉS del banner. Si quedó activo, recalcula y muestra el enlace
+  // correcto para abrir la app (la pantalla del QR proyectada también se actualiza sola).
+  if (hotspotInfo.active) {
+    await new Promise((r) => setTimeout(r, 2500)); // deja que Windows asigne la IP del AP
+    const ap = bestLan();
+    if (ap) {
+      const apUrl = `${proto}://${ap.address}:${WEB_PORT}`;
+      log('');
+      log(`     Ya en la red, abran la app aquí (o escaneen este QR):  ${apUrl}`);
+      qrcode.generate(apUrl, { small: true }, (q) => console.log('\n' + q));
+    } else {
+      log('     Cuando un alumno se conecte, abre la app desde la pantalla del QR (se actualiza sola).');
+    }
+  }
 }
 
 // Al salir (Ctrl+C), apaga el punto de acceso si lo encendimos nosotros.

@@ -82,7 +82,11 @@ async function startWindows({ ssid, password, log }) {
     log?.(`📶 Punto de acceso ACTIVO ("${ssid}") por ${parsed.method}.`);
     return { active: true, assisted: false, method: parsed.method || 'windows', ssid, password, message: parsed.message || '' };
   }
-  const why = [parsed?.message, parsed?.hint].filter(Boolean).join(' ') || err || `powershell devolvió ${code}. ${winInstructions}`;
+  // Si no hubo JSON, mostramos lo que SÍ dijo PowerShell (diagnóstico real, no genérico).
+  const dump = `${String(out).trim()} ${String(err).trim()}`.replace(/\s+/g, ' ').trim().slice(0, 500);
+  const why = [parsed?.message, parsed?.hint].filter(Boolean).join(' ')
+    || dump
+    || `powershell terminó (código ${code}) sin respuesta. ${winInstructions}`;
   log?.(`📶 No se pudo crear el punto de acceso automáticamente.`);
   return { active: false, assisted: true, method: 'manual', ssid, password, message: why };
 }
