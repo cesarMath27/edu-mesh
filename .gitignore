@@ -19,6 +19,10 @@ contenido/
 keys/
 manifest.json
 
+# --- Plan de estudios generado/exportado en la raíz (la plantilla de ejemplo
+#     vive en docs/plan-ejemplo.json y SÍ se versiona). ---
+/plan.json
+
 # --- Proyecto distinto que vive en esta carpeta (Realidad Mixta / Meta Quest) ---
 #     (anclado a la raíz: NO afecta a src/web/public/index.html)
 /index.html

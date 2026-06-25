@@ -56,6 +56,28 @@ export function openCatalog(dbPath) {
       return row ? row.id : db.run('INSERT INTO lecciones (materia_id, titulo, orden) VALUES (?, ?, ?)', [materiaId, titulo, orden]).lastInsertRowid;
     },
 
+    // ---- Metadatos al importar un PLAN de estudios (estructura sin archivos) ----
+    //  Completan la descripción/orden/localidad/grado de nodos ya existentes. Solo
+    //  escriben la localidad/grado si vienen vacíos (no pisan lo que el maestro puso).
+    setEscuelaLocalidad: (escuelaId, localidad) =>
+      db.run("UPDATE escuelas SET localidad = ? WHERE id = ? AND (localidad IS NULL OR localidad = '')", [localidad, escuelaId]),
+
+    setMateriaGrado: (materiaId, grado) =>
+      db.run("UPDATE materias SET grado = ? WHERE id = ? AND (grado IS NULL OR grado = '')", [grado, materiaId]),
+
+    /** id de una lección por (materia, título), o null si aún no existe. */
+    getLeccionId: (materiaId, titulo) => {
+      const row = db.get('SELECT id FROM lecciones WHERE materia_id = ? AND titulo = ?', [materiaId, titulo]);
+      return row ? row.id : null;
+    },
+
+    /** Fija descripción (si viene) y orden de una lección importada de un plan. */
+    updateLeccionMeta: (leccionId, descripcion, orden = 0) =>
+      db.run(
+        "UPDATE lecciones SET descripcion = COALESCE(NULLIF(?, ''), descripcion), orden = ? WHERE id = ?",
+        [descripcion, orden, leccionId]
+      ),
+
     /** Inserta un archivo firmado; si el hash ya existe, solo actualiza el estado. */
     upsertArchivo: ({ leccionId, nombre, mime, tamano, contentHash, chunkSize, chunksRoot, firma, firmaKeyId, estado = 'pendiente' }) =>
       db.run(

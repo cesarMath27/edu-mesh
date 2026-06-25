@@ -19,7 +19,9 @@
     "manifest": "node scripts/build-manifest.js",
     "import": "node scripts/import-manifest.js",
     "pack": "node scripts/build-pack.js",
-    "sync": "node scripts/sync.js"
+    "sync": "node scripts/sync.js",
+    "plan:export": "node scripts/export-plan.js",
+    "plan:import": "node scripts/import-plan.js"
   },
   "keywords": [
     "p2p",

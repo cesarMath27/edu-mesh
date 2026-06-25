@@ -127,6 +127,23 @@ function render(panel, data, close) {
       </section>
     </div>
 
+    <section class="card plan-card">
+      <h3 class="card-title">${icon('i-layers')} Importar configuración (plan de estudios)</h3>
+      <p class="muted small">¿Tu escuela o sistema usa un programa específico? Impórtalo como
+        plantilla: arma el <b>esqueleto</b> de materias y lecciones y tú solo subes tu material en cada una.
+        <b>No borra</b> lo que ya tengas; mezcla y completa.</p>
+      <div class="form plan-form">
+        <label>Archivo del plan (.json)<input type="file" id="planFile" accept=".json,application/json" /></label>
+        <label class="plan-check"><input type="checkbox" id="planQuizzes" /> Importar también los cuestionarios incluidos</label>
+        <div class="plan-actions">
+          <button class="btn primary" id="planImportBtn" type="button">${icon('i-download')} Importar plan</button>
+          <button class="btn ghost" id="planExportBtn" type="button">${icon('i-file')} Descargar el plan de este equipo</button>
+        </div>
+        <p class="up-status muted small" id="planStatus"></p>
+      </div>
+      <div id="planView"><p class="muted small">Cargando planes importados…</p></div>
+    </section>
+
     <section class="card quiz-card">
       <h3 class="card-title">${icon('i-board')} Cuestionario en vivo (juego)</h3>
       <p class="muted small">Crea preguntas y juega estilo Kahoot: los alumnos responden desde su celular en tiempo real.</p>
@@ -136,6 +153,9 @@ function render(panel, data, close) {
   panel.querySelector('#maestroBack').addEventListener('click', close);
   panel.querySelector('#upBtn').addEventListener('click', () => publish(panel));
   panel.querySelector('#maestroSync').addEventListener('click', () => syncNow(panel));
+  panel.querySelector('#planImportBtn').addEventListener('click', () => importPlanFile(panel));
+  panel.querySelector('#planExportBtn').addEventListener('click', () => exportPlan(panel));
+  loadPlanView(panel).catch(() => {});
   wireSettings(panel);
   renderDashboard(panel.querySelector('#dashWrap'), data);
   quizHost?.stop();
@@ -249,6 +269,169 @@ async function publish(panel) {
   } finally {
     btn.disabled = false;
   }
+}
+
+// ---- Plan de estudios (importar/exportar una configuración externa) ----
+
+const authHeader = () => ({ Authorization: 'Bearer ' + token() });
+
+// Si la sesión expiró, limpia el token y avisa (mismo trato que el resto del panel).
+function handleAuthExpired(r) {
+  if (r.status === 401) { sessionStorage.removeItem('edu-token'); alert('Sesión expirada. Vuelve a entrar con el PIN.'); return true; }
+  return false;
+}
+
+// Lee el archivo que eligió el maestro y lo envía al nodo para importarlo.
+async function importPlanFile(panel) {
+  const input = panel.querySelector('#planFile');
+  const status = panel.querySelector('#planStatus');
+  const file = input.files[0];
+  if (!file) { status.textContent = 'Elige primero un archivo de plan (.json).'; return; }
+  let plan;
+  try { plan = JSON.parse(await file.text()); }
+  catch { status.textContent = '✗ El archivo no es un JSON válido.'; return; }
+
+  const btn = panel.querySelector('#planImportBtn');
+  btn.disabled = true; status.textContent = `Importando "${file.name}"…`;
+  try {
+    const r = await fetch('/api/teacher/plan/import', {
+      method: 'POST',
+      headers: { ...authHeader(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ plan, importarCuestionarios: panel.querySelector('#planQuizzes').checked }),
+    });
+    if (handleAuthExpired(r)) return;
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) { status.textContent = '✗ ' + (j.error || 'no se pudo importar'); return; }
+    const s = j.resumen || {};
+    const extra = s.cuestionarios ? `, ${s.cuestionarios} cuestionario(s)` : '';
+    status.textContent = `✓ Plan importado: ${s.materias} materia(s), ${s.lecciones} lección(es) (${s.leccionesNuevas} nueva(s))${extra}.`;
+    input.value = '';
+    window.dispatchEvent(new Event('catalog-changed')); // refresca el catálogo de los alumnos/app
+    await loadPlanView(panel);
+  } catch (e) {
+    status.textContent = '✗ ' + e.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// Descarga el catálogo de ESTE equipo como plan (plantilla) para compartirlo.
+async function exportPlan(panel) {
+  const status = panel.querySelector('#planStatus');
+  try {
+    const r = await fetch('/api/teacher/plan/export', { headers: authHeader() });
+    if (handleAuthExpired(r)) return;
+    if (!r.ok) { status.textContent = '✗ No se pudo exportar el plan.'; return; }
+    const blob = await r.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'plan-edu-mesh.json';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    status.textContent = '✓ Plan descargado. Compártelo para que otro maestro lo importe.';
+  } catch (e) {
+    status.textContent = '✗ ' + e.message;
+  }
+}
+
+// Carga la lista de planes importados y muestra el seleccionado (o el más reciente).
+async function loadPlanView(panel, selectedId) {
+  const wrap = panel.querySelector('#planView');
+  if (!wrap) return;
+  let plans = [];
+  try {
+    const r = await fetch('/api/teacher/plan/list', { headers: authHeader() });
+    if (handleAuthExpired(r)) return;
+    plans = (await r.json()).plans || [];
+  } catch { wrap.innerHTML = ''; return; }
+
+  if (!plans.length) {
+    wrap.innerHTML = '<p class="muted small">Todavía no has importado ningún plan. Cuando importes uno, aquí verás sus materias y lecciones, y qué falta por llenar de material.</p>';
+    return;
+  }
+  const id = selectedId || plans[0].id;
+  let plan = null;
+  try {
+    const r = await fetch('/api/teacher/plan/get?id=' + encodeURIComponent(id), { headers: authHeader() });
+    if (handleAuthExpired(r)) return;
+    if (r.ok) plan = (await r.json()).plan;
+  } catch { /* sin datos */ }
+
+  const selector = plans.length > 1
+    ? `<label class="plan-select muted small">Plan activo
+        <select id="planPick">${plans.map((p) => `<option value="${esc(p.id)}" ${p.id === id ? 'selected' : ''}>${esc(p.nombre)} · ${p.lecciones} lección(es)</option>`).join('')}</select>
+      </label>` : '';
+
+  wrap.innerHTML = `<div class="plan-head">${selector}</div><div id="planTree"></div>`;
+  if (plans.length > 1) {
+    wrap.querySelector('#planPick').addEventListener('change', (e) => loadPlanView(panel, e.target.value));
+  }
+  renderPlanTree(wrap.querySelector('#planTree'), plan, panel, id);
+}
+
+// Dibuja el "esqueleto" del plan: materias → lecciones, con su estado y un botón
+// que prerrellena "Publicar material" para que el maestro solo arrastre el archivo.
+function renderPlanTree(wrap, plan, panel, id) {
+  if (!plan) { wrap.innerHTML = '<p class="muted small">No se pudo cargar el plan.</p>'; return; }
+  const pr = plan.progreso || { lecciones: 0, conMaterial: 0 };
+  const pct = pr.lecciones ? Math.round((pr.conMaterial / pr.lecciones) * 100) : 0;
+
+  const mats = [];
+  for (const e of plan.escuelas || []) {
+    for (const m of e.materias || []) {
+      const lecs = (m.lecciones || []).map((l) => {
+        const badge = l.tieneMaterial
+          ? `<span class="badge ok">${icon('i-check')} con material</span>`
+          : '<span class="badge bad">falta material</span>';
+        const recur = l.recursos?.length
+          ? `<span class="plan-rec muted small" title="Recursos sugeridos">· sugeridos: ${esc(l.recursos.map((r) => r.nombre).join(', '))}</span>` : '';
+        const btn = l.tieneMaterial ? ''
+          : `<button class="btn ghost small plan-add" type="button"
+               data-esc="${esc(e.nombre)}" data-mat="${esc(m.nombre)}" data-lec="${esc(l.titulo)}" data-ord="${l.orden || 0}">＋ Material</button>`;
+        return `<li class="plan-lec">
+            <span class="plan-lec-name">${esc(l.titulo)}${l.descripcion ? ` <em class="muted">— ${esc(l.descripcion)}</em>` : ''} ${recur}</span>
+            <span class="plan-lec-end">${badge}${btn}</span>
+          </li>`;
+      }).join('');
+      mats.push(`<div class="plan-mat">
+          <h4 class="plan-mat-title">${esc(m.nombre)}${m.grado ? ` <span class="muted small">(${esc(m.grado)})</span>` : ''} <span class="muted small">· ${esc(e.nombre)}</span></h4>
+          <ul class="plan-lec-list">${lecs || '<li class="muted small">Sin lecciones.</li>'}</ul>
+        </div>`);
+    }
+  }
+
+  wrap.innerHTML = `
+    <div class="plan-progress">
+      <span class="muted small">${plan.nombre}${plan.fuente ? ` · ${esc(plan.fuente)}` : ''}</span>
+      <span class="rb"><span class="rb-fill" style="width:${pct}%"></span></span>
+      <span class="rc">${pr.conMaterial}/${pr.lecciones} con material</span>
+      <button class="btn ghost small plan-del" type="button" data-id="${esc(id)}" title="Quitar este plan del panel (no borra tu material)">${icon('i-x')} Quitar</button>
+    </div>
+    ${mats.join('') || '<p class="muted small">Este plan no tiene materias.</p>'}`;
+
+  // Prerrellena el formulario de "Publicar material" y baja hasta él.
+  wrap.querySelectorAll('.plan-add').forEach((b) => b.addEventListener('click', () => {
+    panel.querySelector('#upEscuela').value = b.dataset.esc;
+    panel.querySelector('#upMateria').value = b.dataset.mat;
+    panel.querySelector('#upLeccion').value = b.dataset.lec;
+    panel.querySelector('#upOrden').value = b.dataset.ord || '0';
+    const status = panel.querySelector('#upStatus');
+    if (status) status.textContent = `Listo para subir material de "${b.dataset.lec}". Elige el archivo y pulsa Publicar.`;
+    const fileInput = panel.querySelector('#upFile');
+    fileInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setTimeout(() => fileInput.focus(), 300);
+  }));
+  wrap.querySelector('.plan-del')?.addEventListener('click', async (e) => {
+    if (!confirm('¿Quitar este plan del panel? Tu material publicado NO se borra.')) return;
+    try {
+      const r = await fetch('/api/teacher/plan/delete', {
+        method: 'POST', headers: { ...authHeader(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: e.currentTarget.dataset.id }),
+      });
+      if (handleAuthExpired(r)) return;
+      await loadPlanView(panel);
+    } catch { /* ignore */ }
+  });
 }
 
 function renderDashboard(wrap, data) {
