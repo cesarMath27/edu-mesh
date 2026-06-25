@@ -32,6 +32,7 @@ import { listAuthorities, pickSigningKeyId, signDetached } from '../crypto/keyst
 import { computeChunkHashes } from '../crypto/chunking.js';
 import { hashFile } from '../crypto/hashing.js';
 import { buildManifest } from '../catalog/manifest.js';
+import { buildPlan, validatePlan, importPlan } from '../catalog/plan.js';
 import { stableStringify } from '../util/stable-json.js';
 import { createLimiter } from '../util/limiter.js';
 import { lanAddresses, bestLan } from '../util/netinfo.js';
@@ -206,7 +207,7 @@ function serveFile(req, res, filePath, mime, name) {
  */
 export async function startWebServer({
   cat, cacheDir, nodeName, getChunkInfo, resolveHashToFile, log,
-  getSyncStatus, runSyncNow, getCatalogVersion, onCatalogChanged, quizStore,
+  getSyncStatus, runSyncNow, getCatalogVersion, onCatalogChanged, quizStore, planStore,
 }) {
   const activeDownloads = new Set(); // evita descargas duplicadas del mismo hash
   let brokerState = () => [];         // lo fija attachSignaling tras escuchar
@@ -242,6 +243,43 @@ export async function startWebServer({
     if (!exp) return false;
     if (Date.now() > exp) { tokens.delete(t); return false; }
     return true;
+  };
+
+  // Regenera el manifiesto firmado (si hay llave) para que el cambio se propague
+  // a otros nodos al sincronizar. Igual que tras publicar un archivo.
+  const regenManifest = () => {
+    const signingKeyId = pickSigningKeyId();
+    if (!signingKeyId) return false;
+    fs.writeFileSync(path.join(ROOT, 'manifest.json'),
+      JSON.stringify(buildManifest(cat.exportTree(), signingKeyId), null, 2));
+    return true;
+  };
+
+  // Marca cada lección de un plan con si YA tiene material publicado en el catálogo
+  // (cruzando por escuela/materia/título). Así el panel muestra "qué falta llenar".
+  const annotatePlan = (plan) => {
+    const conMaterial = new Set();
+    for (const a of cat.listArchivos()) conMaterial.add(`${a.escuela} ${a.materia} ${a.leccion}`);
+    let lecciones = 0; let conMat = 0;
+    const escuelas = (plan.escuelas ?? []).map((e) => ({
+      nombre: e.nombre, localidad: e.localidad ?? null,
+      materias: (e.materias ?? []).map((m) => ({
+        nombre: m.nombre, grado: m.grado ?? null,
+        lecciones: (m.lecciones ?? []).map((l) => {
+          const tiene = conMaterial.has(`${e.nombre} ${m.nombre} ${l.titulo}`);
+          lecciones++; if (tiene) conMat++;
+          return {
+            titulo: l.titulo, descripcion: l.descripcion ?? null, orden: l.orden ?? 0,
+            recursos: l.recursos ?? [], tieneMaterial: tiene,
+          };
+        }),
+      })),
+    }));
+    return {
+      id: plan.id, nombre: plan.nombre, fuente: plan.fuente ?? null,
+      descripcion: plan.descripcion ?? null, importadoEn: plan.importadoEn ?? null,
+      escuelas, progreso: { lecciones, conMaterial: conMat },
+    };
   };
 
   const handler = async (req, res) => {
@@ -582,6 +620,73 @@ export async function startWebServer({
       if (route === '/api/quiz/end') return sendJson(res, 200, quizGame.end() || { state: 'idle' });
       if (route === '/api/quiz/cancel') { quizGame.cancel(); return sendJson(res, 200, { ok: true }); }
       return sendJson(res, 404, { error: 'Ruta de cuestionario desconocida' });
+    }
+
+    // ---- API Maestro: PLAN DE ESTUDIOS (importar una configuración externa) ----
+    //  Permite que una escuela/sistema comparta el MODELO de su curso (estructura,
+    //  sin archivos) y el maestro lo importe a su edu-mesh para adaptarlo. Todas
+    //  las rutas requieren sesión de maestro.
+    if (route.startsWith('/api/teacher/plan')) {
+      if (!isTeacher(req)) return sendJson(res, 401, { error: 'No autorizado' });
+      if (!planStore) return sendJson(res, 500, { error: 'Este nodo no guarda planes.' });
+
+      // Lista de planes importados (resumen).
+      if (route === '/api/teacher/plan/list' && req.method === 'GET') {
+        return sendJson(res, 200, { plans: planStore.list() });
+      }
+      // Un plan importado, anotado con qué lecciones ya tienen material.
+      if (route === '/api/teacher/plan/get' && req.method === 'GET') {
+        const id = url.searchParams.get('id');
+        const plan = id ? planStore.load(id) : planStore.latest();
+        if (!plan) return sendJson(res, 404, { error: 'Plan no encontrado' });
+        return sendJson(res, 200, { plan: annotatePlan(plan) });
+      }
+      // Exporta el catálogo actual como plan (plantilla) para compartirlo.
+      if (route === '/api/teacher/plan/export' && req.method === 'GET') {
+        const plan = buildPlan(cat.exportTree(), { nombre: `Plan de ${nodeName}`, fuente: nodeName });
+        const fname = `plan-${String(nodeName).toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40) || 'edu-mesh'}.json`;
+        res.writeHead(200, {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Content-Disposition': `attachment; filename="${fname}"`,
+        });
+        return res.end(JSON.stringify(plan, null, 2));
+      }
+
+      if (req.method !== 'POST') return sendJson(res, 405, { error: 'Método no permitido' });
+      let payload = {};
+      try { const b = await readBody(req); payload = b ? JSON.parse(b) : {}; }
+      catch { return sendJson(res, 400, { error: 'Cuerpo inválido' }); }
+
+      // Importa (mezclando) un plan en el catálogo + lo guarda + (opcional) sus cuestionarios.
+      if (route === '/api/teacher/plan/import') {
+        const v = validatePlan(payload.plan ?? payload);
+        if (v.error) return sendJson(res, 400, { error: v.error });
+        let resumen;
+        try { resumen = importPlan(v.plan, cat); }
+        catch (err) { return sendJson(res, 500, { error: err.message }); }
+
+        // Cuestionarios incluidos en el plan (opcional, si el maestro lo pidió).
+        let cuestionarios = 0;
+        const quizzes = Array.isArray((payload.plan ?? payload).cuestionarios) ? (payload.plan ?? payload).cuestionarios : [];
+        if (payload.importarCuestionarios && quizStore && quizzes.length) {
+          for (const q of quizzes) {
+            const vq = validateQuiz(q);
+            if (!vq.error) { quizStore.save(vq.game); cuestionarios++; }
+          }
+        }
+
+        const saved = planStore.save(v.plan);
+        regenManifest();                 // propaga la estructura a otros nodos (si hay llave)
+        onCatalogChanged?.();            // las apps se refrescan solas
+        log?.(`📚 Maestro importó el plan "${v.plan.nombre}" (${resumen.lecciones} lección/es, ${resumen.leccionesNuevas} nueva/s)`);
+        return sendJson(res, 200, { ok: true, resumen: { ...resumen, cuestionarios }, plan: saved });
+      }
+      // Borra un plan guardado (solo el esqueleto; el material publicado NO se toca).
+      if (route === '/api/teacher/plan/delete') {
+        planStore.remove(payload.id);
+        return sendJson(res, 200, { ok: true });
+      }
+      return sendJson(res, 404, { error: 'Ruta de plan desconocida' });
     }
 
     // ---- Estáticos ----

@@ -1,0 +1,40 @@
+{
+  "tipo": "edu-mesh/plan",
+  "version": 1,
+  "nombre": "Programa de ejemplo · 5º de Primaria",
+  "fuente": "Escuela / Sistema educativo",
+  "descripcion": "Plantilla de curso de ejemplo. Edita las materias y lecciones según tu programa; el maestro la importa y sube su material en cada lección.",
+  "escuelas": [
+    {
+      "nombre": "Primaria Benito Juárez",
+      "localidad": "Oaxaca",
+      "materias": [
+        {
+          "nombre": "Ciencias Naturales",
+          "grado": "5º",
+          "lecciones": [
+            { "titulo": "La célula", "descripcion": "Estructura y función de la célula.", "orden": 1, "recursos": [{ "nombre": "la-celula.pdf", "mime": "application/pdf" }] },
+            { "titulo": "La fotosíntesis", "descripcion": "Cómo las plantas producen su alimento.", "orden": 2, "recursos": [{ "nombre": "fotosintesis.mp4", "mime": "video/mp4" }] },
+            { "titulo": "El sistema solar", "descripcion": "Planetas y movimientos.", "orden": 3, "recursos": [] }
+          ]
+        },
+        {
+          "nombre": "Matemáticas",
+          "grado": "5º",
+          "lecciones": [
+            { "titulo": "Fracciones", "descripcion": "Suma y resta de fracciones.", "orden": 1, "recursos": [{ "nombre": "fracciones.pdf", "mime": "application/pdf" }] },
+            { "titulo": "Decimales", "descripcion": "Lectura y operaciones con decimales.", "orden": 2, "recursos": [] }
+          ]
+        }
+      ]
+    }
+  ],
+  "cuestionarios": [
+    {
+      "title": "Repaso de Ciencias",
+      "questions": [
+        { "q": "¿Qué produce la fotosíntesis?", "options": ["Oxígeno y glucosa", "Solo agua", "Dióxido de carbono", "Minerales"], "correct": 0, "time": 20 }
+      ]
+    }
+  ]
+}

@@ -28,6 +28,7 @@ contenido viaja firmado criptográficamente, así cada dispositivo verifica que 
 - **Manifiesto firmado**: el curador firma el catálogo completo; cada dispositivo lo verifica antes de importarlo.
 - **Trust store multi-autoridad** con **rotación/revocación** de llaves.
 - Cargar contenido por **carpetas** (`npm run content`), por **navegador** (Modo Maestro), o **sincronizando** de un hub en línea.
+- **Importar un plan de estudios (configuración externa):** si una escuela o sistema usa un programa específico, comparte su **modelo de curso** (estructura de materias y lecciones, sin archivos) y cualquier maestro lo importa para **adaptar su curso**; el plan arma el esqueleto y el maestro solo sube su material en cada lección. **No borra** lo que ya tenga (mezcla).
 
 **Distribución P2P**
 - Archivos en **bloques (chunks)** con **verificación por bloque** anclada a una raíz firmada.
@@ -58,6 +59,7 @@ contenido viaja firmado criptográficamente, así cada dispositivo verifica que 
 |------|-----------|----------------|
 | Catálogo local | SQLite en **WASM** (`node-sqlite3-wasm`, sin binarios nativos) | [schema.sql](src/db/schema.sql), [catalog.js](src/db/catalog.js) |
 | Confianza | Ed25519 + trust store + manifiesto | [keystore.js](src/crypto/keystore.js), [manifest.js](src/catalog/manifest.js) |
+| Plan de estudios (config. externa) | plantilla JSON sin firmas (merge no destructivo) | [plan.js](src/catalog/plan.js), [plan-store.js](src/catalog/plan-store.js) |
 | Bloques | SHA-256 por bloque + raíz firmada | [chunking.js](src/crypto/chunking.js) |
 | Descubrimiento (nodos) | UDP broadcast (`dgram`) | [discovery.js](src/p2p/discovery.js) |
 | Transferencia (nodos) | TCP por bloque (`net`) | [server.js](src/p2p/server.js), [client.js](src/p2p/client.js) |
@@ -91,6 +93,7 @@ edu-mesh/
 │   ├── add-content.js               # firma y registra UN archivo
 │   ├── build-manifest.js            # firma el catálogo de un home → manifest.json
 │   ├── import-manifest.js           # verifica e importa un manifiesto
+│   ├── export-plan.js / import-plan.js  # exporta / importa un PLAN de estudios (plantilla de curso)
 │   ├── build-pack.js                # empaqueta contenido para el hub (npm run pack)
 │   └── sync.js                      # sincroniza un paquete del hub (npm run sync)
 └── src/
@@ -99,7 +102,7 @@ edu-mesh/
     ├── node-seed.js / node-student.js   # ▶ nodos CLI (solo P2P entre nodos)
     ├── util/   log.js · stable-json.js · netinfo.js · limiter.js (administración de carga)
     ├── crypto/ hashing.js · signature.js · keystore.js · chunking.js · validation.js
-    ├── catalog/ manifest.js
+    ├── catalog/ manifest.js · plan.js (plantilla de curso) · plan-store.js (planes importados)
     ├── sync/   sync-core.js (una pasada) · auto-sync.js (programador periódico)
     ├── db/     schema.sql · catalog.js
     ├── p2p/    discovery.js · server.js · client.js · download-manager.js
@@ -110,7 +113,8 @@ edu-mesh/
 ```
 
 > No se versionan: `node_modules/`, `runtime/` (Node portátil), `.teacher-pin`, `nodes/`
-> (datos por dispositivo), `keys/` (llaves), `manifest.json`, `contenido/` y `dist-pack/`.
+> (datos por dispositivo), `keys/` (llaves), `manifest.json`, `plan.json`, `contenido/` y `dist-pack/`.
+> (La plantilla de ejemplo `docs/plan-ejemplo.json` SÍ se versiona.)
 
 ---
 
@@ -246,6 +250,37 @@ El maestro puede forzar una pasada con **"Sincronizar ahora"**.
 > catálogo del manifiesto); si además publicas localmente con el Modo Maestro, sube primero
 > ese material al hub para que no lo reemplace la siguiente sincronización.
 
+### Importar un plan de estudios (configuración externa) 📚
+
+¿Tu **escuela o sistema** imparte un programa específico? En vez de armar el curso
+desde cero, importa su **modelo** como una *plantilla*: un archivo JSON con la
+**estructura** (escuelas → materias → lecciones, con su orden y descripción, y
+opcionalmente *recursos sugeridos* y cuestionarios), **sin** los archivos pesados ni
+firmas. El maestro lo importa, se crea el **esqueleto** de lecciones, y él solo sube su
+material en cada una — adaptando el curso a su salón.
+
+- **No es destructivo:** se **mezcla** con lo que ya tengas (añade lo nuevo y completa la
+  descripción/orden de las lecciones que coincidan por nombre). Tu material publicado no se toca.
+- **Desde el navegador (recomendado):** Modo Maestro → *Importar configuración (plan de
+  estudios)* → elige el `.json` → **Importar plan**. Debajo aparece el esqueleto con un
+  indicador de **qué lecciones ya tienen material y cuáles faltan**, y un botón **＋ Material**
+  por lección que **prerrellena** el formulario de *Publicar material* para que solo arrastres el archivo.
+- **Compartir tu modelo:** el botón *Descargar el plan de este equipo* (o `npm run plan:export`)
+  genera el plan a partir de tu catálogo actual, listo para que otro maestro lo importe.
+
+```powershell
+# Importar un plan (mezcla, no borra):
+node scripts/import-plan.js --home=nodes/semilla --plan=plan.json     # (npm run plan:import)
+# Exportar el catálogo de este equipo como plan/plantilla:
+node scripts/export-plan.js --home=nodes/semilla --out=plan.json      # (npm run plan:export)
+```
+
+Hay una **plantilla de ejemplo** en [`docs/plan-ejemplo.json`](docs/plan-ejemplo.json). Un
+plan también acepta un `manifest.json` firmado como entrada (toma su estructura e ignora las
+firmas). Las lecciones sin material **solo las ve el maestro** en este panel hasta que publica
+un archivo; los alumnos ven una lección cuando ya tiene contenido. Para propagar la estructura a
+otros nodos por sincronización, vuelve a firmar el catálogo con `npm run manifest`.
+
 ---
 
 ## Seguridad
@@ -292,6 +327,7 @@ Abre `http://localhost:8080`, descarga, abre el PDF, entra al Modo Maestro con e
 | `content` | Importa la carpeta `contenido/` |
 | `keys` | Gestiona autoridades |
 | `manifest` / `import` | Firma / verifica-importa un manifiesto |
+| `plan:import` / `plan:export` | Importa (mezcla) / exporta un **plan de estudios** (configuración de curso) |
 | `pack` / `sync` | Empaqueta para el hub / sincroniza desde el hub |
 | `add` | Firma y agrega un archivo suelto |
 | `seed` / `student` | Nodos CLI (solo P2P entre nodos, sin UI) |

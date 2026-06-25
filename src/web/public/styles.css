@@ -298,6 +298,37 @@ table.dash td.none { color: var(--faint); }
 .settings-qr img { width: 168px; height: 168px; background: #fff; padding: 8px; border-radius: 12px; border: 1px solid var(--border); }
 @media (max-width: 760px) { .settings-grid { grid-template-columns: 1fr; } .settings-qr { align-items: flex-start; } }
 
+/* ---------- Importar configuración (plan de estudios) ---------- */
+.plan-card { border-color: color-mix(in srgb, var(--primary) 22%, var(--border)); }
+.plan-check { flex-direction: row !important; align-items: center; gap: 8px !important; font-weight: 400 !important; color: var(--text) !important; }
+.plan-check input { min-height: 0; width: auto; }
+.plan-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+#planView { margin-top: 16px; }
+.plan-head { margin-bottom: 10px; }
+.plan-select { display: flex; flex-direction: column; gap: 4px; }
+.plan-select select {
+  font: inherit; color: var(--text); min-height: 38px; padding: 6px 10px;
+  border-radius: 9px; background: var(--surface-2); border: 1px solid var(--border-strong);
+}
+.plan-progress { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.plan-progress .rb { flex: 1 1 140px; min-width: 120px; }
+.plan-mat { margin: 0 0 14px; }
+.plan-mat-title { margin: 0 0 6px; font-size: 14.5px; }
+.plan-lec-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.plan-lec {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 7px 10px; border-radius: 9px; background: var(--surface-2); border: 1px solid var(--border);
+}
+.plan-lec-name { min-width: 0; font-size: 13.5px; }
+.plan-lec-name em { font-style: normal; }
+.plan-rec { display: inline-block; }
+.plan-lec-end { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+.plan-add { white-space: nowrap; }
+@media (max-width: 760px) {
+  .plan-lec { flex-direction: column; align-items: flex-start; }
+  .plan-lec-end { width: 100%; justify-content: space-between; }
+}
+
 /* ---------- Chip de sincronización automática ---------- */
 .sync-chip { color: var(--muted); }
 .sync-chip.spin .ic { animation: spin 1s linear infinite; color: var(--primary-700); }
