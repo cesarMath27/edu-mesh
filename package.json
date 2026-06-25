@@ -21,7 +21,8 @@
     "pack": "node scripts/build-pack.js",
     "sync": "node scripts/sync.js",
     "plan:export": "node scripts/export-plan.js",
-    "plan:import": "node scripts/import-plan.js"
+    "plan:import": "node scripts/import-plan.js",
+    "hotspot": "node scripts/hotspot.js"
   },
   "keywords": [
     "p2p",

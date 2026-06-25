@@ -33,6 +33,7 @@ import { computeChunkHashes } from '../crypto/chunking.js';
 import { hashFile } from '../crypto/hashing.js';
 import { buildManifest } from '../catalog/manifest.js';
 import { buildPlan, validatePlan, importPlan } from '../catalog/plan.js';
+import { wifiQrPayload } from '../net/hotspot.js';
 import { stableStringify } from '../util/stable-json.js';
 import { createLimiter } from '../util/limiter.js';
 import { lanAddresses, bestLan } from '../util/netinfo.js';
@@ -207,7 +208,7 @@ function serveFile(req, res, filePath, mime, name) {
  */
 export async function startWebServer({
   cat, cacheDir, nodeName, getChunkInfo, resolveHashToFile, log,
-  getSyncStatus, runSyncNow, getCatalogVersion, onCatalogChanged, quizStore, planStore,
+  getSyncStatus, runSyncNow, getCatalogVersion, onCatalogChanged, quizStore, planStore, getHotspot,
 }) {
   const activeDownloads = new Set(); // evita descargas duplicadas del mismo hash
   let brokerState = () => [];         // lo fija attachSignaling tras escuchar
@@ -321,6 +322,33 @@ export async function startWebServer({
       const target = url.searchParams.get('url') || fallback;
       try {
         const svg = await QRCode.toString(target, { type: 'svg', margin: 1, errorCorrectionLevel: 'M' });
+        res.writeHead(200, { 'Content-Type': 'image/svg+xml; charset=utf-8', 'Cache-Control': 'no-store' });
+        return res.end(svg);
+      } catch {
+        res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
+        return res.end('No se pudo generar el QR');
+      }
+    }
+
+    // ---- API: estado del punto de acceso WiFi (público) ----
+    //  La pantalla del QR y el panel del maestro lo usan para mostrar el "únete a
+    //  la red". La clave se comparte a propósito (los alumnos la necesitan para
+    //  unirse); solo se expone si el hotspot está habilitado en este nodo.
+    if (route === '/api/wifi') {
+      const h = getHotspot ? getHotspot() : { enabled: false };
+      if (!h || !h.enabled) return sendJson(res, 200, { enabled: false });
+      return sendJson(res, 200, {
+        enabled: true, pending: !!h.pending, active: !!h.active, assisted: !!h.assisted,
+        ssid: h.ssid, password: h.password, method: h.method || '', message: h.message || '',
+      });
+    }
+
+    // ---- API: QR para UNIRSE a la red WiFi del hotspot (SVG, público) ----
+    if (route === '/api/wifi-qr.svg') {
+      const h = getHotspot ? getHotspot() : null;
+      if (!h || !h.enabled || !h.ssid) { res.writeHead(404, { 'Content-Type': 'text/plain' }); return res.end('sin hotspot'); }
+      try {
+        const svg = await QRCode.toString(wifiQrPayload(h.ssid, h.password), { type: 'svg', margin: 1, errorCorrectionLevel: 'M' });
         res.writeHead(200, { 'Content-Type': 'image/svg+xml; charset=utf-8', 'Cache-Control': 'no-store' });
         return res.end(svg);
       } catch {

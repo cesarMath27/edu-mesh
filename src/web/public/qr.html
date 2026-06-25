@@ -62,6 +62,20 @@
       100% { box-shadow: 0 0 0 0 rgba(56,224,192,0); }
     }
     .warn { color: #ffd27d; max-width: 28ch; font-size: clamp(1rem, 2.4vw, 1.6rem); }
+    /* Tarjeta "únete a la red WiFi" (solo cuando hay hotspot en la PC) */
+    .wifi-card {
+      display: flex; align-items: center; gap: clamp(12px, 2.4vw, 26px);
+      background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.12);
+      border-radius: 22px; padding: clamp(12px, 2vw, 22px); max-width: 92vw;
+    }
+    .wifi-qr { background: #fff; border-radius: 16px; padding: 10px;
+      width: clamp(110px, 22vh, 230px); height: clamp(110px, 22vh, 230px); flex: 0 0 auto; }
+    .wifi-qr img { width: 100%; height: 100%; display: block; }
+    .wifi-meta { text-align: left; display: flex; flex-direction: column; gap: .35em; min-width: 0; }
+    .wifi-meta .lbl { color: var(--muted); font-size: clamp(.8rem, 1.6vw, 1.1rem); }
+    .wifi-meta .val { font-weight: 800; font-size: clamp(1.1rem, 2.6vw, 2rem);
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; word-break: break-all; }
+    .wifi-meta .st { color: var(--accent2); font-weight: 700; font-size: clamp(.85rem,1.6vw,1.1rem); }
     .brand { position: fixed; top: 18px; left: 22px; color: var(--muted);
       font-weight: 700; letter-spacing: .06em; font-size: .95rem; opacity: .8; }
     @media (prefers-color-scheme: light) {
@@ -77,7 +91,18 @@
 <body>
   <div class="brand">edu-mesh</div>
   <h1>Escanea para entrar a la clase</h1>
-  <p class="sub">Conéctate a la <b>WiFi del salón</b> y apunta la cámara al código</p>
+  <p class="sub" id="sub">Conéctate a la <b>WiFi del salón</b> y apunta la cámara al código</p>
+
+  <!-- Paso 1 (solo si esta PC crea el punto de acceso): únete a la red WiFi -->
+  <div class="wifi-card" id="wifiCard" hidden>
+    <div class="wifi-qr" id="wifiQr"></div>
+    <div class="wifi-meta">
+      <span class="lbl">Paso 1 · Únete a esta red WiFi</span>
+      <span class="val" id="wifiSsid">…</span>
+      <span class="lbl">Clave: <b id="wifiPass" style="color:var(--fg)">…</b></span>
+      <span class="st" id="wifiState"></span>
+    </div>
+  </div>
 
   <div class="qr-wrap" id="qrWrap" aria-label="Código QR para ingresar">
     <!-- el QR se inyecta aquí -->
@@ -113,6 +138,20 @@
       }
     }
 
+    async function loadWifi() {
+      try {
+        const w = await fetch('/api/wifi').then((r) => r.json());
+        const card = $('#wifiCard');
+        if (!w.enabled) { card.hidden = true; return; }
+        card.hidden = false;
+        $('#wifiSsid').textContent = w.ssid;
+        $('#wifiPass').textContent = w.password;
+        $('#wifiQr').innerHTML = '<img alt="QR de la red WiFi" src="/api/wifi-qr.svg?t=' + Date.now() + '" />';
+        $('#wifiState').textContent = w.pending ? 'creando la red…' : (w.active ? '✓ red activa' : 'actívala en tu PC (datos arriba)');
+        $('#sub').innerHTML = 'Paso 1: <b>únete a la red WiFi</b> (QR de la izquierda) · Paso 2: <b>abre la app</b> (QR de abajo)';
+      } catch { /* sin datos todavía */ }
+    }
+
     async function loadPresence() {
       try {
         const { count } = await fetch('/api/presence').then((r) => r.json());
@@ -123,8 +162,10 @@
     }
 
     loadNet();
+    loadWifi();
     loadPresence();
     setInterval(loadNet, 20000);     // re-detecta la IP por si cambia de red
+    setInterval(loadWifi, 8000);     // estado del punto de acceso (si lo hay)
     setInterval(loadPresence, 4000); // alumnos conectados en vivo
   </script>
 </body>

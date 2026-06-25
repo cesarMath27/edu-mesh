@@ -197,6 +197,7 @@ function settingsHtml() {
             ${row('Tamaño máx. al publicar', `${s.maxUploadMb} MB`)}
             ${row('Bloques en paralelo', `${s.serveConcurrency} (cola ${s.serveQueue})`)}
             ${row('Tamaño de bloque', `${s.chunkSizeKiB} KiB`)}
+            <div class="set-row" id="wifiRow" hidden><span class="set-k">Punto de acceso WiFi</span><span class="set-v" id="wifiVal"></span></div>
           </div>
         </div>
         <div class="settings-qr">
@@ -218,6 +219,16 @@ function wireSettings(panel) {
   panel.querySelector('#copyPin')?.addEventListener('click', (e) => copy(teacherInfo.pin, e.currentTarget));
   panel.querySelector('#copyJoin')?.addEventListener('click', (e) => copy(teacherInfo.settings?.lan || teacherInfo.settings?.url || '', e.currentTarget));
   panel.querySelector('#openQr')?.addEventListener('click', () => window.open('/qr.html', 'edu-mesh-qr'));
+
+  // Estado del punto de acceso WiFi (si este nodo lo creó con --hotspot).
+  fetch('/api/wifi').then((r) => r.json()).then((w) => {
+    const rowEl = panel.querySelector('#wifiRow');
+    const valEl = panel.querySelector('#wifiVal');
+    if (!rowEl || !valEl || !w.enabled) return;
+    const estado = w.pending ? 'creando…' : (w.active ? '✓ activo' : '⚠ actívalo a mano');
+    valEl.textContent = `${estado} · red "${w.ssid}" · clave ${w.password}`;
+    rowEl.hidden = false;
+  }).catch(() => {});
 }
 
 // Fuerza una sincronización con el hub ahora mismo (el avance se ve en el chip "sync").
