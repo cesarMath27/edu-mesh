@@ -62,17 +62,18 @@ export function wifiQrPayload(ssid, password) {
 }
 
 const winInstructions =
-  'Actívalo a mano: Inicio → Configuración → Red e Internet → Zona con cobertura inalámbrica móvil (o ejecuta  start ms-settings:network-mobilehotspot ).';
+  'Para crear la WiFi sin internet hace falta permiso de Administrador y un adaptador WiFi compatible. Actívalo a mano: Inicio → Configuración → Red e Internet → Zona con cobertura inalámbrica móvil (o ejecuta  start ms-settings:network-mobilehotspot ).';
 
-// ---- Windows: Mobile hotspot (WinRT, sin admin) → netsh → asistido ----
+// ---- Windows: red hospedada offline (netsh, con elevación) → mobile hotspot → asistido ----
 async function startWindows({ ssid, password, log }) {
+  // Tiempo amplio: puede aparecer el aviso de Windows (UAC) y esperar al maestro.
   const { code, out, err } = await run(
     'powershell',
     ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', PS1, '-Action', 'start', '-Ssid', ssid, '-Password', password],
-    { timeoutMs: 30000 },
+    { timeoutMs: 120000 },
   );
   let parsed = null;
-  // El script imprime una línea JSON: { ok, method, message }.
+  // El script imprime una línea JSON: { ok, method, message, hint }.
   for (const line of String(out).split(/\r?\n/)) {
     const t = line.trim();
     if (t.startsWith('{') && t.endsWith('}')) { try { parsed = JSON.parse(t); } catch { /* sigue */ } }
@@ -81,9 +82,9 @@ async function startWindows({ ssid, password, log }) {
     log?.(`📶 Punto de acceso ACTIVO ("${ssid}") por ${parsed.method}.`);
     return { active: true, assisted: false, method: parsed.method || 'windows', ssid, password, message: parsed.message || '' };
   }
-  const why = parsed?.message || err || `powershell devolvió ${code}`;
-  log?.(`📶 No se pudo crear el punto de acceso automáticamente (${why}).`);
-  return { active: false, assisted: true, method: 'manual', ssid, password, message: `${why}. ${winInstructions}` };
+  const why = [parsed?.message, parsed?.hint].filter(Boolean).join(' ') || err || `powershell devolvió ${code}. ${winInstructions}`;
+  log?.(`📶 No se pudo crear el punto de acceso automáticamente.`);
+  return { active: false, assisted: true, method: 'manual', ssid, password, message: why };
 }
 
 // ---- Linux: NetworkManager ----

@@ -201,15 +201,23 @@ node src/node-app.js --home=nodes/semilla --hotspot --ap-ssid="Aula 5" --ap-pass
   toque. La **pantalla del QR** (la que se proyecta) muestra ese QR como **Paso 1** y el de
   abrir la app como **Paso 2**.
 - Es **"mejor esfuerzo"** y depende del sistema/adaptador:
-  - **Windows:** usa el *Mobile hotspot* nativo (**sin admin**, pero comparte una conexión
-    existente); si no se puede, intenta `netsh` (SoftAP offline, pero **pide administrador** y
-    no lo soportan todos los adaptadores).
-  - **Linux:** NetworkManager (`nmcli`) — pide `sudo` y un adaptador compatible con modo AP.
-  - **macOS:** no se puede por software → modo **asistido**: te guía a activar *Compartir
-    Internet* y te da el SSID/clave + QR.
+  - **Windows (sin internet, lo normal en un salón):** crea una **red hospedada** propia con
+    `netsh` (SoftAP) que **NO necesita internet**. Para eso pide **permiso de Administrador**
+    (aparece el aviso de Windows / UAC; acéptalo, o inicia el lanzador como administrador) y el
+    **adaptador WiFi debe soportar "red hospedada"**.
+  - **Windows (con internet):** si hay conexión y no quieres dar permisos, usa el *Mobile
+    hotspot* nativo (**sin admin**), que **comparte** esa conexión.
+  - **Linux:** NetworkManager (`nmcli`) crea la red sin internet — pide `sudo` y un adaptador
+    compatible con modo AP.
+  - **macOS:** no se puede por software → modo **asistido** (te guía a *Compartir Internet* +
+    SSID/clave + QR).
+- **¿Tu PC no tiene WiFi (solo cable) o el adaptador no soporta "red hospedada"?** Entonces no
+  hay forma de crear la WiFi por software: usa un **adaptador USB WiFi con modo AP** (baratos) o
+  un pequeño **router/travel-router**. La app te lo dirá en el mensaje si ese es el caso.
 - Si **no** puede crearlo automáticamente, **no rompe nada**: muestra instrucciones y el QR
-  para que lo actives a mano; la app sigue funcionando igual. Al salir (Ctrl+C), si lo encendió
-  edu-mesh, lo **apaga solo**.
+  para que lo actives a mano; la app sigue funcionando igual. Al salir (Ctrl+C) intenta apagarlo;
+  la **red hospedada** offline podría seguir activa hasta que reinicies o la apagues con permisos
+  (`npm run hotspot -- stop` como administrador).
 - Para probarlo por separado: `npm run hotspot -- start` / `npm run hotspot -- stop`.
 
 > El iniciador de dos pantallas (`Iniciar-Maestro` / `npm run maestro`) lo enciende
