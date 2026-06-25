@@ -14,6 +14,7 @@ contenido viaja firmado criptográficamente, así cada dispositivo verifica que 
 ```
 
 - **100% offline:** solo necesita la red WiFi local (ni siquiera un router con internet).
+- **Crea su propia WiFi (opcional):** con `--hotspot`, la PC del maestro **levanta un punto de acceso** para que los alumnos se unan **sin router** (automático en Windows/Linux; en Mac, asistido). Incluye **QR para unirse a la red** de un toque.
 - **Se reparte sola (P2P):** entre más dispositivos tienen un archivo, más rápido llega a los demás.
 - **Curado y firmado (Ed25519):** solo entra contenido de una autoridad confiable; lo alterado se rechaza y se borra.
 - **Sin instalar nada en el celular:** todo corre en el navegador.
@@ -95,7 +96,9 @@ edu-mesh/
 │   ├── import-manifest.js           # verifica e importa un manifiesto
 │   ├── export-plan.js / import-plan.js  # exporta / importa un PLAN de estudios (plantilla de curso)
 │   ├── build-pack.js                # empaqueta contenido para el hub (npm run pack)
-│   └── sync.js                      # sincroniza un paquete del hub (npm run sync)
+│   ├── sync.js                      # sincroniza un paquete del hub (npm run sync)
+│   ├── hotspot.js                   # enciende/apaga el punto de acceso WiFi (npm run hotspot)
+│   └── win-hotspot.ps1              # crea el hotspot en Windows (Mobile hotspot / netsh)
 └── src/
     ├── config.js                    # configuración por --flag / variables EDU_*
     ├── node-app.js                  # ▶ App por dispositivo: semilla + UI web + auto-sync (RECOMENDADO)
@@ -104,6 +107,7 @@ edu-mesh/
     ├── crypto/ hashing.js · signature.js · keystore.js · chunking.js · validation.js
     ├── catalog/ manifest.js · plan.js (plantilla de curso) · plan-store.js (planes importados)
     ├── sync/   sync-core.js (una pasada) · auto-sync.js (programador periódico)
+    ├── net/    hotspot.js (punto de acceso WiFi en la PC, opcional)
     ├── db/     schema.sql · catalog.js
     ├── p2p/    discovery.js · server.js · client.js · download-manager.js
     └── web/    server.js (+ /api/qr.svg, /api/net, /api/teacher/info) · signaling.js · quiz.js ·
@@ -178,6 +182,33 @@ node src/node-app.js --home=nodes/semilla --name=Central
 Imprime la URL y un QR. Los celulares (misma WiFi) abren `http://<IP>:8080`, navegan el
 catálogo, pulsan **Descargar**, y el archivo se baja por bloques (de compañeros o del
 central), se verifica y se abre. Cada celular que lo baja **se vuelve fuente** para los demás.
+
+### Punto de acceso WiFi en la PC (`--hotspot`)
+¿No hay router en el salón? La PC del maestro puede **crear su propia red WiFi** y que los
+alumnos se unan a ella. Se activa al arrancar:
+
+```powershell
+node src/node-app.js --home=nodes/semilla --name=Central --hotspot
+# opcional: fija el nombre y la clave de la red
+node src/node-app.js --home=nodes/semilla --hotspot --ap-ssid="Aula 5" --ap-pass=clase1234
+```
+
+- Al arrancar imprime la **red (SSID)**, la **clave** y un **QR para unirse a la WiFi** de un
+  toque. La **pantalla del QR** (la que se proyecta) muestra ese QR como **Paso 1** y el de
+  abrir la app como **Paso 2**.
+- Es **"mejor esfuerzo"** y depende del sistema/adaptador:
+  - **Windows:** usa el *Mobile hotspot* nativo (**sin admin**, pero comparte una conexión
+    existente); si no se puede, intenta `netsh` (SoftAP offline, pero **pide administrador** y
+    no lo soportan todos los adaptadores).
+  - **Linux:** NetworkManager (`nmcli`) — pide `sudo` y un adaptador compatible con modo AP.
+  - **macOS:** no se puede por software → modo **asistido**: te guía a activar *Compartir
+    Internet* y te da el SSID/clave + QR.
+- Si **no** puede crearlo automáticamente, **no rompe nada**: muestra instrucciones y el QR
+  para que lo actives a mano; la app sigue funcionando igual. Al salir (Ctrl+C), si lo encendió
+  edu-mesh, lo **apaga solo**.
+- Para probarlo por separado: `npm run hotspot -- start` / `npm run hotspot -- stop`.
+
+> El iniciador de dos pantallas también lo acepta: `node scripts/launch.js --hotspot`.
 
 ### Modo Maestro
 Botón **Maestro** (protegido por PIN; si no lo fijas, se genera uno aleatorio y se imprime
@@ -328,6 +359,7 @@ Abre `http://localhost:8080`, descarga, abre el PDF, entra al Modo Maestro con e
 | `keys` | Gestiona autoridades |
 | `manifest` / `import` | Firma / verifica-importa un manifiesto |
 | `plan:import` / `plan:export` | Importa (mezcla) / exporta un **plan de estudios** (configuración de curso) |
+| `hotspot` | Enciende/apaga el **punto de acceso WiFi** de la PC a mano (`-- start` / `-- stop`) |
 | `pack` / `sync` | Empaqueta para el hub / sincroniza desde el hub |
 | `add` | Firma y agrega un archivo suelto |
 | `seed` / `student` | Nodos CLI (solo P2P entre nodos, sin UI) |
@@ -340,6 +372,9 @@ Abre `http://localhost:8080`, descarga, abre el PDF, entra al Modo Maestro con e
 | `--name=` | nombre del home | Nombre visible del nodo |
 | `--web-port=` | `8080` | Puerto de la UI web |
 | `--tls` | apagado | Sirve por **HTTPS** (cert autofirmado en `keys/`) |
+| `--hotspot` | apagado | Crea un **punto de acceso WiFi** en la PC (mejor esfuerzo; ver arriba) |
+| `--ap-ssid=` | `edu-mesh` | Nombre (SSID) de la red del hotspot |
+| `--ap-pass=` | aleatoria | Clave WiFi del hotspot (WPA2, ≥8 caracteres) |
 | `--teacher-pin=` | aleatorio | PIN del Modo Maestro |
 | `--max-upload-mb=` | `600` | Tamaño máx. al publicar desde el navegador |
 | `--discovery-port=` | `41234` | Puerto UDP de descubrimiento |
@@ -356,7 +391,7 @@ Abre `http://localhost:8080`, descarga, abre el PDF, entra al Modo Maestro con e
 
 ## Despliegue (notas de campo)
 - **Hardware:** una Raspberry Pi (o cualquier PC/laptop) sirve como nodo central; corre Node sin compilar (gracias a WASM). El ESP32 **no** sirve (no corre Node). El Jetson Nano **viejo** no sirve para IA.
-- **Red:** el límite real es el **WiFi**, no el software. Un hotspot de celular aguanta ~8–10 dispositivos; un **router de verdad**, 30–250. Para más salones → **más puntos de acceso**, un solo nodo central. **Evita WiFi público** (suele bloquear el tráfico entre dispositivos).
+- **Red:** el límite real es el **WiFi**, no el software. Un hotspot de celular aguanta ~8–10 dispositivos; un **router de verdad**, 30–250. Para más salones → **más puntos de acceso**, un solo nodo central. **Evita WiFi público** (suele bloquear el tráfico entre dispositivos). Si no hay router, prueba `--hotspot` (la PC crea su propia WiFi), pero ojo: un adaptador WiFi de PC suele aguantar **menos** clientes que un router dedicado.
 - **Servidor:** **uno por escuela**, no por salón. Como el contenido **persiste** en cada celular, no todos tienen que estar conectados al mismo tiempo.
 
 ## Limitaciones honestas / roadmap

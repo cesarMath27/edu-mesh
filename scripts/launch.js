@@ -80,7 +80,8 @@ const serverArgs = [
   `--home=${HOME}`, `--name=${NAME}`, `--web-port=${PORT}`, `--teacher-pin=${PIN}`,
 ];
 if (TLS) serverArgs.push('--tls');
-for (const a of process.argv.slice(2)) if (a.startsWith('--sync')) serverArgs.push(a); // pasa --sync-from / --sync-interval
+if (flag('hotspot')) serverArgs.push('--hotspot'); // crea el punto de acceso WiFi en la PC
+for (const a of process.argv.slice(2)) if (a.startsWith('--sync') || a.startsWith('--ap-')) serverArgs.push(a); // --sync-from/-interval, --ap-ssid/-pass
 
 say(`\n${C.bold}${C.cyan}  edu-mesh · iniciando el nodo central…${C.reset}`);
 say(`${C.dim}  (deja esta ventana ABIERTA durante la clase · Ctrl+C para salir)${C.reset}\n`);

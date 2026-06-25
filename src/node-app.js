@@ -24,8 +24,9 @@ import { startWebServer } from './web/server.js';
 import { createQuizStore } from './web/quiz-store.js';
 import { createPlanStore } from './catalog/plan-store.js';
 import { startAutoSync } from './sync/auto-sync.js';
+import { startHotspot, stopHotspot, wifiQrPayload } from './net/hotspot.js';
 import { getOrBuildChunkInfo } from './crypto/chunking.js';
-import { DB_PATH, CACHE_DIR, HOME, NODE_NAME, CHUNK_SIZE, WEB_PORT, TEACHER_PIN, TEACHER_PIN_IS_GENERATED, TLS, SYNC_FROM, SYNC_INTERVAL_MIN } from './config.js';
+import { DB_PATH, CACHE_DIR, HOME, NODE_NAME, CHUNK_SIZE, WEB_PORT, TEACHER_PIN, TEACHER_PIN_IS_GENERATED, TLS, SYNC_FROM, SYNC_INTERVAL_MIN, HOTSPOT, AP_SSID, AP_PASS } from './config.js';
 import { makeLogger } from './util/log.js';
 import { lanAddresses, bestLan } from './util/netinfo.js';
 import qrcode from 'qrcode-terminal';
@@ -76,6 +77,12 @@ if (SYNC_FROM) {
   });
 }
 
+// 1.7) Punto de acceso WiFi en la PC (opcional, --hotspot): estado en vivo que la
+//      UI lee por /api/wifi para mostrar el QR de "únete a la red".
+let hotspotInfo = HOTSPOT
+  ? { enabled: true, pending: true, active: false, assisted: false, method: '', ssid: AP_SSID, password: AP_PASS, message: 'Creando el punto de acceso…' }
+  : { enabled: false };
+
 // 2) Servidor de UI web local + broker de señalización WebRTC (mesh de navegadores).
 //    (startWebServer arranca también el broker y el tablero del maestro.)
 await startWebServer({
@@ -86,6 +93,7 @@ await startWebServer({
   onCatalogChanged: bumpCatalog,
   quizStore: createQuizStore(path.join(HOME, 'quizzes')),
   planStore: createPlanStore(path.join(HOME, 'plans')),
+  getHotspot: () => hotspotInfo,
 });
 
 // Banner de conexión: URL en este equipo, IPs para los celulares y un QR.
@@ -110,3 +118,32 @@ log('');
 log(`  🔑 PIN del Modo Maestro: ${TEACHER_PIN}`);
 if (TEACHER_PIN_IS_GENERATED) log('     (generado al azar para esta sesión · fíjalo con --teacher-pin=TUPIN)');
 log('  Este equipo también siembra para sus compañeros. (Ctrl+C para salir)');
+
+// --- Punto de acceso WiFi (opcional): se intenta crear y se muestran las claves ---
+if (HOTSPOT) {
+  log('');
+  log(`  📶 Creando un punto de acceso WiFi en esta PC ("${AP_SSID}")…`);
+  hotspotInfo = { enabled: true, pending: false, ...(await startHotspot({ ssid: AP_SSID, password: AP_PASS, log })) };
+  log('');
+  if (hotspotInfo.active) {
+    log('  ✓ Punto de acceso LISTO. Que los alumnos se unan a esta red WiFi:');
+  } else {
+    log('  ⚠ No se pudo crear automáticamente. Actívalo a mano y usa estos datos:');
+    if (hotspotInfo.message) log(`     ${hotspotInfo.message}`);
+  }
+  log(`     Red (SSID): ${AP_SSID}`);
+  log(`     Clave:      ${AP_PASS}`);
+  log('     O escanea este QR para unirse a la red de un toque:');
+  qrcode.generate(wifiQrPayload(AP_SSID, AP_PASS), { small: true }, (q) => console.log('\n' + q));
+  log('     Ya conectados, escanean el OTRO QR (el de arriba) para abrir la app.');
+}
+
+// Al salir (Ctrl+C), apaga el punto de acceso si lo encendimos nosotros.
+let stopping = false;
+const cleanup = async () => {
+  if (stopping) return; stopping = true;
+  if (hotspotInfo?.active) await stopHotspot({ method: hotspotInfo.method, log });
+  process.exit(0);
+};
+process.on('SIGINT', cleanup);
+process.on('SIGTERM', cleanup);

@@ -93,6 +93,14 @@ export const TEACHER_PIN_IS_GENERATED = !_pinArg;
 //  Tamaño máximo de un archivo publicado desde el navegador (MB).
 export const MAX_UPLOAD_MB = Number(arg('max-upload-mb', 600));
 
+// --- Punto de acceso WiFi en la PC (hotspot, opcional) ----------------------
+//  Con --hotspot la PC del maestro intenta CREAR su propia red WiFi para que los
+//  alumnos se unan sin necesitar un router (mejor esfuerzo; ver src/net/hotspot.js).
+//  El SSID/clave se pueden fijar; si no, la clave se genera legible (≥8, WPA2).
+export const HOTSPOT = process.argv.includes('--hotspot') || process.env.EDU_HOTSPOT === '1';
+export const AP_SSID = arg('ap-ssid', 'edu-mesh');
+export const AP_PASS = arg('ap-pass') || `edumesh${randomInt(1000, 10000)}`;
+
 // --- Cifrado del transporte (HTTPS/TLS opcional) ----------------------------
 //  Con --tls la app sirve por HTTPS → token y datos CIFRADOS en la LAN. El
 //  certificado es autofirmado (se genera solo en keys/): el navegador mostrará
